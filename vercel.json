@@ -1,0 +1,11 @@
+{
+  "buildCommand": "npm run build:vercel",
+  "installCommand": "npm install",
+  "outputDirectory": "build",
+  "framework": "create-react-app",
+  "env": {
+    "CI": "false",
+    "ESLINT_NO_DEV_ERRORS": "true",
+    "DISABLE_ESLINT_PLUGIN": "true"
+  }
+}
