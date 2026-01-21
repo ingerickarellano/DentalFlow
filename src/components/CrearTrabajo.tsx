@@ -55,6 +55,7 @@ interface TrabajoAgregado {
   precioUnitario: number;
   observaciones?: string;
   notaEspecial?: string;
+  fechaTrabajo?: Date; // Nueva propiedad para fecha del trabajo
 }
 
 type IdiomaType = 'es' | 'en';
@@ -106,6 +107,16 @@ const useDebounce = (value: string, delay: number) => {
   return debouncedValue;
 };
 
+// Interfaz para historial de servicios usados
+interface HistorialServicio {
+  servicio_id: string;
+  servicio_nombre: string;
+  categoria: string;
+  veces_usado: number;
+  ultimo_uso: Date;
+  clinica_id: string;
+}
+
 const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [clinicas, setClinicas] = useState<ClinicaSupabase[]>([]);
   const [dentistas, setDentistas] = useState<DentistaSupabase[]>([]);
@@ -128,6 +139,10 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [cargandoDatos, setCargandoDatos] = useState<boolean>(true);
   const [notasServicios, setNotasServicios] = useState<{ [key: string]: string }>({});
   const [showFloatingCounter, setShowFloatingCounter] = useState(false);
+  const [fechaTrabajo, setFechaTrabajo] = useState<string>('');
+  const [mostrarHistorial, setMostrarHistorial] = useState<boolean>(false);
+  const [historialServicios, setHistorialServicios] = useState<HistorialServicio[]>([]);
+  const [cargandoHistorial, setCargandoHistorial] = useState<boolean>(false);
   
   const [configDetallada, setConfigDetallada] = useState<ConfiguracionDetallada>({
     tooth: '',
@@ -151,6 +166,21 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
   // Usar debounce para la búsqueda (300ms)
   const terminoBusquedaDebounced = useDebounce(terminoBusqueda, 300);
+
+  // Setear fecha actual por defecto
+  useEffect(() => {
+    const hoy = new Date();
+    const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+    const año = hoy.getFullYear();
+    setFechaTrabajo(`${año}-${mes}`);
+  }, []);
+
+  // Cargar historial cuando se selecciona una clínica
+  useEffect(() => {
+    if (clinicaSeleccionada) {
+      cargarHistorialServicios();
+    }
+  }, [clinicaSeleccionada]);
 
   // Materiales organizados para modo detallado
   const materialCategories = [
@@ -208,6 +238,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       laboratorista: 'Laboratorista (Opcional)',
       paciente: 'Nombre del Paciente *',
       rut: 'RUT (Opcional)',
+      fechaTrabajo: 'Mes del Trabajo *',
       modoSimple: '🔄 Modo Simple',
       modoDetallado: '⚙️ Modo Detallado',
       finalizar: '✅ Finalizar y Guardar Trabajo',
@@ -248,7 +279,19 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       notaEspecial: 'Nota especial (opcional)',
       notaPlaceholder: 'Ej: Color especial, material específico, observaciones...',
       cambiarPaciente: 'Para cambiar de paciente, limpie primero la lista de trabajos',
-      actualizarPaciente: '⚠️ El nombre del paciente ha cambiado. ¿Deseas actualizar todos los trabajos existentes al nuevo nombre?'
+      actualizarPaciente: '⚠️ El nombre del paciente ha cambiado. ¿Deseas actualizar todos los trabajos existentes al nuevo nombre?',
+      verHistorial: '📊 Ver prestaciones más usadas',
+      ocultarHistorial: '📊 Ocultar historial',
+      historialTitulo: 'Prestaciones más usadas en esta clínica',
+      vecesUsado: 'veces usado',
+      ultimoUso: 'Último uso',
+      agregarDesdeHistorial: 'Agregar',
+      sinHistorial: 'No hay historial de prestaciones para esta clínica',
+      cargandoHistorial: 'Cargando historial...',
+      seleccionaMes: 'Selecciona mes y año',
+      mesActual: 'Mes actual',
+      mesAnterior: 'Mes anterior',
+      mesSiguiente: 'Mes siguiente'
     },
     en: {
       title: '📋 Create Work List',
@@ -258,6 +301,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       laboratorista: 'Laboratory Technician (Optional)',
       paciente: 'Patient Name *',
       rut: 'RUT (Optional)',
+      fechaTrabajo: 'Work Month *',
       modoSimple: '🔄 Simple Mode',
       modoDetallado: '⚙️ Detailed Mode',
       finalizar: '✅ Finish and Save Work',
@@ -298,7 +342,19 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       notaEspecial: 'Special note (optional)',
       notaPlaceholder: 'Ex: Special color, specific material, observations...',
       cambiarPaciente: 'To change patient, first clear the work list',
-      actualizarPaciente: '⚠️ Patient name has changed. Do you want to update all existing works to the new name?'
+      actualizarPaciente: '⚠️ Patient name has changed. Do you want to update all existing works to the new name?',
+      verHistorial: '📊 View most used services',
+      ocultarHistorial: '📊 Hide history',
+      historialTitulo: 'Most used services in this clinic',
+      vecesUsado: 'times used',
+      ultimoUso: 'Last used',
+      agregarDesdeHistorial: 'Add',
+      sinHistorial: 'No service history for this clinic',
+      cargandoHistorial: 'Loading history...',
+      seleccionaMes: 'Select month and year',
+      mesActual: 'Current month',
+      mesAnterior: 'Previous month',
+      mesSiguiente: 'Next month'
     }
   };
 
@@ -359,7 +415,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         setLaboratoristas(laboratoristasData || []);
         console.log('Laboratoristas cargados:', laboratoristasData?.length || 0);
 
-        // Cargar servicios del usuario (mantenemos filtro de activo porque la tabla servicios sí tiene esta columna)
+        // Cargar servicios del usuario
         await cargarServicios();
 
       } catch (error: any) {
@@ -371,6 +427,79 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     
     cargarDatosIniciales();
   }, []);
+
+  // Función para cargar historial de servicios más usados
+  const cargarHistorialServicios = async () => {
+    if (!clinicaSeleccionada) return;
+    
+    try {
+      setCargandoHistorial(true);
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error('No hay usuario autenticado');
+        return;
+      }
+
+      // Consulta para obtener servicios más usados por esta clínica
+      const { data, error } = await supabase
+        .from('trabajos')
+        .select(`
+          servicios,
+          clinica_id,
+          created_at
+        `)
+        .eq('usuario_id', user.id)
+        .eq('clinica_id', clinicaSeleccionada)
+        .order('created_at', { ascending: false })
+        .limit(100); // Últimos 100 trabajos para analizar
+
+      if (error) throw error;
+
+      // Procesar los datos para contar servicios más usados
+      const historialMap = new Map<string, HistorialServicio>();
+      
+      data?.forEach(trabajo => {
+        if (trabajo.servicios && Array.isArray(trabajo.servicios)) {
+          trabajo.servicios.forEach((serv: any) => {
+            if (serv.servicio_id) {
+              const key = serv.servicio_id;
+              const existing = historialMap.get(key);
+              
+              if (existing) {
+                existing.veces_usado += serv.cantidad || 1;
+                if (new Date(trabajo.created_at) > existing.ultimo_uso) {
+                  existing.ultimo_uso = new Date(trabajo.created_at);
+                }
+              } else {
+                historialMap.set(key, {
+                  servicio_id: serv.servicio_id,
+                  servicio_nombre: serv.nombre || 'Servicio',
+                  categoria: serv.categoria || 'general',
+                  veces_usado: serv.cantidad || 1,
+                  ultimo_uso: new Date(trabajo.created_at),
+                  clinica_id: trabajo.clinica_id
+                });
+              }
+            }
+          });
+        }
+      });
+
+      // Convertir a array y ordenar por veces_usado
+      const historialArray = Array.from(historialMap.values())
+        .sort((a, b) => b.veces_usado - a.veces_usado)
+        .slice(0, 20); // Top 20 servicios más usados
+
+      setHistorialServicios(historialArray);
+      
+    } catch (error: any) {
+      console.error('Error cargando historial de servicios:', error);
+    } finally {
+      setCargandoHistorial(false);
+    }
+  };
 
   const cargarServicios = async () => {
     try {
@@ -452,11 +581,29 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     }).format(precio);
   };
 
+  // Formatear fecha en español
+  const formatearFecha = (fechaStr: string) => {
+    const [año, mes] = fechaStr.split('-');
+    const fecha = new Date(parseInt(año), parseInt(mes) - 1, 1);
+    
+    return fecha.toLocaleDateString(idioma === 'es' ? 'es-CL' : 'en-US', {
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
   // Función para agregar trabajo en modo simple
   const agregarTrabajoSimple = (servicio: ServicioSupabase) => {
     const cantidad = cantidades[servicio.id] || 1;
     const piezaDental = piezasDentales[servicio.id] || '';
     const notaEspecial = notasServicios[servicio.id] || '';
+    
+    // Convertir fecha string a Date
+    let fechaTrabajoDate: Date | undefined;
+    if (fechaTrabajo) {
+      const [año, mes] = fechaTrabajo.split('-');
+      fechaTrabajoDate = new Date(parseInt(año), parseInt(mes) - 1, 1);
+    }
 
     const trabajo: TrabajoAgregado = {
       id: Date.now().toString() + Math.random(),
@@ -466,13 +613,39 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       cantidad,
       piezaDental,
       precioUnitario: servicio.precio_base,
-      notaEspecial
+      notaEspecial,
+      fechaTrabajo: fechaTrabajoDate
     };
 
     setTrabajosAgregados([...trabajosAgregados, trabajo]);
     setCantidades(prev => ({ ...prev, [servicio.id]: 1 }));
     setPiezasDentales(prev => ({ ...prev, [servicio.id]: '' }));
     setNotasServicios(prev => ({ ...prev, [servicio.id]: '' }));
+  };
+
+  // Función para agregar desde el historial
+  const agregarDesdeHistorial = (servicioHistorial: HistorialServicio) => {
+    // Buscar el servicio completo en la lista de servicios
+    const servicioCompleto = servicios.find(s => s.id === servicioHistorial.servicio_id);
+    
+    if (servicioCompleto) {
+      agregarTrabajoSimple(servicioCompleto);
+    } else {
+      // Si no está en la lista actual, buscar en Supabase o crear uno temporal
+      const servicioTemporal: ServicioSupabase = {
+        id: servicioHistorial.servicio_id,
+        nombre: servicioHistorial.servicio_nombre,
+        categoria: servicioHistorial.categoria,
+        precio_base: 0, // Necesitaríamos cargar el precio real
+        activo: true,
+        usuario_id: '',
+        creado_en: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+      
+      agregarTrabajoSimple(servicioTemporal);
+    }
   };
 
   // Función para eliminar trabajo de la lista
@@ -496,6 +669,11 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
     if (trabajosAgregados.length === 0) {
       alert(idioma === 'es' ? 'Por favor agrega al menos un trabajo' : 'Please add at least one work');
+      return;
+    }
+
+    if (!fechaTrabajo) {
+      alert(idioma === 'es' ? 'Por favor selecciona un mes para el trabajo' : 'Please select a month for the work');
       return;
     }
 
@@ -545,8 +723,12 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           nota_especial: trabajo.notaEspecial || trabajo.observaciones || ''
         }));
 
-        // Calcular fecha de entrega (7 días después)
-        const fechaEntrega = new Date();
+        // Convertir fechaTrabajo a fecha de creación
+        const [año, mes] = fechaTrabajo.split('-');
+        const fechaCreacion = new Date(parseInt(año), parseInt(mes) - 1, 1);
+        
+        // Calcular fecha de entrega (7 días después de la fecha de creación)
+        const fechaEntrega = new Date(fechaCreacion);
         fechaEntrega.setDate(fechaEntrega.getDate() + 7);
 
         // Calcular total para este paciente
@@ -564,13 +746,14 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           servicios: serviciosParaBD,
           estado: 'pendiente',
           precio_total: totalPaciente,
-          fecha_creacion: new Date().toISOString(),
+          fecha_creacion: fechaCreacion.toISOString(),
           fecha_entrega_estimada: fechaEntrega.toISOString().split('T')[0],
           notas: grupo.trabajos.map(t => 
             `${t.servicio.nombre}${t.notaEspecial ? ` (Nota: ${t.notaEspecial})` : ''}`
           ).join(' | '),
           modo: 'clinica',
-          usuario_id: user.id
+          usuario_id: user.id,
+          mes_trabajo: fechaTrabajo // Nuevo campo para filtrar por mes
         };
 
         console.log(`📝 Guardando trabajo para paciente: ${grupo.paciente}`, trabajoData);
@@ -624,7 +807,38 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     setNotasServicios(prev => ({ ...prev, [servicioId]: nota }));
   };
 
-  const puedeFinalizar = clinicaSeleccionada && trabajosAgregados.length > 0;
+  // Navegar entre meses
+  const cambiarMes = (direccion: 'anterior' | 'siguiente') => {
+    const [año, mes] = fechaTrabajo.split('-').map(Number);
+    let nuevoMes = mes;
+    let nuevoAño = año;
+    
+    if (direccion === 'anterior') {
+      nuevoMes--;
+      if (nuevoMes < 1) {
+        nuevoMes = 12;
+        nuevoAño--;
+      }
+    } else {
+      nuevoMes++;
+      if (nuevoMes > 12) {
+        nuevoMes = 1;
+        nuevoAño++;
+      }
+    }
+    
+    setFechaTrabajo(`${nuevoAño}-${String(nuevoMes).padStart(2, '0')}`);
+  };
+
+  // Restablecer al mes actual
+  const restablecerMesActual = () => {
+    const hoy = new Date();
+    const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+    const año = hoy.getFullYear();
+    setFechaTrabajo(`${año}-${mes}`);
+  };
+
+  const puedeFinalizar = clinicaSeleccionada && trabajosAgregados.length > 0 && fechaTrabajo;
 
   // ==================== FUNCIONES MODO DETALLADO ====================
   const toggleMaterial = (material: string) => {
@@ -690,6 +904,13 @@ Color del diente: ${configDetallada.toothColor}
       created_at: new Date().toISOString()
     };
 
+    // Convertir fecha string a Date
+    let fechaTrabajoDate: Date | undefined;
+    if (fechaTrabajo) {
+      const [año, mes] = fechaTrabajo.split('-');
+      fechaTrabajoDate = new Date(parseInt(año), parseInt(mes) - 1, 1);
+    }
+
     const trabajo: TrabajoAgregado = {
       id: Date.now().toString() + Math.random(),
       paciente: nombrePaciente.trim(),
@@ -699,7 +920,8 @@ Color del diente: ${configDetallada.toothColor}
       piezaDental: configDetallada.tooth,
       precioUnitario: precioBase,
       observaciones,
-      notaEspecial: observaciones
+      notaEspecial: observaciones,
+      fechaTrabajo: fechaTrabajoDate
     };
 
     setTrabajosAgregados([...trabajosAgregados, trabajo]);
@@ -720,7 +942,7 @@ Color del diente: ${configDetallada.toothColor}
       toothColor: 'A2'
     });
     
-    alert('¡Trabajo detallado agregado exitosamente!');
+    alert(idioma === 'es' ? '¡Trabajo detallado agregado exitosamente!' : 'Detailed work added successfully!');
   };
 
   // Limpiar todo
@@ -756,6 +978,13 @@ Color del diente: ${configDetallada.toothColor}
         toothColor: 'A2'
       });
       setShowFloatingCounter(false);
+      setMostrarHistorial(false);
+      
+      // Restablecer fecha al mes actual
+      const hoy = new Date();
+      const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+      const año = hoy.getFullYear();
+      setFechaTrabajo(`${año}-${mes}`);
       
       alert(idioma === 'es' ? 'Todo limpiado correctamente' : 'Everything cleared successfully');
     }
@@ -975,6 +1204,125 @@ Color del diente: ${configDetallada.toothColor}
       fontSize: '1rem',
       backgroundColor: 'white',
       cursor: 'pointer'
+    },
+    // Controles de fecha
+    dateControls: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1rem',
+      marginBottom: '1rem',
+      flexWrap: 'wrap'
+    },
+    dateDisplay: {
+      fontSize: '1.125rem',
+      fontWeight: '600',
+      color: '#1e293b',
+      backgroundColor: '#f0f9ff',
+      padding: '0.75rem 1.5rem',
+      borderRadius: '0.5rem',
+      border: '1px solid #bae6fd',
+      minWidth: '200px',
+      textAlign: 'center'
+    },
+    dateButton: {
+      padding: '0.75rem 1rem',
+      border: '1px solid #cbd5e1',
+      borderRadius: '0.5rem',
+      backgroundColor: 'white',
+      color: '#475569',
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontWeight: '500',
+      transition: 'all 0.2s',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem'
+    },
+    dateButtonActive: {
+      backgroundColor: '#3b82f6',
+      color: 'white',
+      border: '1px solid #3b82f6'
+    },
+    // Historial de servicios
+    historialContainer: {
+      backgroundColor: 'white',
+      borderRadius: '0.75rem',
+      padding: '1.5rem',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+      border: '1px solid #e2e8f0',
+      marginBottom: '2rem'
+    },
+    historialTitle: {
+      fontSize: '1.25rem',
+      fontWeight: '700',
+      color: '#1e293b',
+      marginBottom: '1rem',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem'
+    },
+    historialToggle: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.5rem 1rem',
+      border: '1px solid #cbd5e1',
+      borderRadius: '0.5rem',
+      backgroundColor: '#f8fafc',
+      color: '#475569',
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontWeight: '500',
+      transition: 'all 0.2s',
+      marginBottom: '1rem'
+    },
+    historialGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+      gap: '1rem'
+    },
+    historialCard: {
+      backgroundColor: '#f8fafc',
+      padding: '1rem',
+      borderRadius: '0.5rem',
+      border: '1px solid #e2e8f0',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      transition: 'all 0.2s'
+    },
+    historialInfo: {
+      flex: 1
+    },
+    historialNombre: {
+      fontWeight: '600',
+      color: '#1e293b',
+      marginBottom: '0.25rem'
+    },
+    historialStats: {
+      fontSize: '12px',
+      color: '#64748b',
+      display: 'flex',
+      gap: '0.75rem'
+    },
+    historialBadge: {
+      backgroundColor: '#3b82f6',
+      color: 'white',
+      padding: '0.25rem 0.5rem',
+      borderRadius: '0.25rem',
+      fontSize: '11px',
+      fontWeight: '600'
+    },
+    historialButton: {
+      padding: '0.5rem 1rem',
+      border: 'none',
+      borderRadius: '0.375rem',
+      backgroundColor: '#10b981',
+      color: 'white',
+      cursor: 'pointer',
+      fontSize: '12px',
+      fontWeight: '600',
+      transition: 'background-color 0.2s'
     },
     searchContainer: {
       marginBottom: '1.5rem',
@@ -1424,6 +1772,72 @@ Color del diente: ${configDetallada.toothColor}
     }
   };
 
+  // Renderizar historial de servicios
+  const renderHistorialServicios = () => (
+    <div style={styles.historialContainer}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h3 style={styles.historialTitle}>
+          📊 {t.historialTitulo}
+        </h3>
+        <button
+          style={styles.historialToggle}
+          onClick={() => setMostrarHistorial(!mostrarHistorial)}
+        >
+          {mostrarHistorial ? '👁️ Ocultar' : '👁️ Mostrar'} {mostrarHistorial ? t.ocultarHistorial : t.verHistorial}
+        </button>
+      </div>
+      
+      {mostrarHistorial && (
+        <>
+          {cargandoHistorial ? (
+            <div style={{ textAlign: 'center', padding: '2rem' }}>
+              <div style={{ fontSize: '2rem' }}>🔄</div>
+              <div style={styles.loadingText}>{t.cargandoHistorial}</div>
+            </div>
+          ) : historialServicios.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+              <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📝</div>
+              <p>{t.sinHistorial}</p>
+            </div>
+          ) : (
+            <div style={styles.historialGrid}>
+              {historialServicios.slice(0, 6).map((servicio, index) => (
+                <div 
+                  key={servicio.servicio_id} 
+                  style={styles.historialCard}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-3px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  <div style={styles.historialInfo}>
+                    <div style={styles.historialNombre}>{servicio.servicio_nombre}</div>
+                    <div style={styles.historialStats}>
+                      <span>🔥 {servicio.veces_usado} {t.vecesUsado}</span>
+                      <span>📅 {servicio.ultimo_uso.toLocaleDateString(idioma === 'es' ? 'es-CL' : 'en-US')}</span>
+                    </div>
+                  </div>
+                  <button
+                    style={styles.historialButton}
+                    onClick={() => agregarDesdeHistorial(servicio)}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#0da271'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
+                  >
+                    {t.agregarDesdeHistorial}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+
   // Renderizar modo detallado
   const renderModoDetallado = () => (
     <div style={styles.detailedContainer}>
@@ -1709,7 +2123,7 @@ Color del diente: ${configDetallada.toothColor}
         {/* Información del paciente */}
         <div style={styles.formContainer}>
           <h3 style={{ color: '#1e293b', marginBottom: '1.5rem', fontSize: '1.25rem' }}>
-            📋 {idioma === 'es' ? 'Información del Paciente' : 'Patient Information'}
+            📋 {idioma === 'es' ? 'Información del Trabajo' : 'Work Information'}
           </h3>
           
           <div style={styles.formGrid}>
@@ -1721,6 +2135,7 @@ Color del diente: ${configDetallada.toothColor}
                 onChange={(e) => {
                   setClinicaSeleccionada(e.target.value);
                   setDentistaSeleccionado('');
+                  setMostrarHistorial(false);
                 }}
                 required
               >
@@ -1767,6 +2182,50 @@ Color del diente: ${configDetallada.toothColor}
             </div>
           </div>
 
+          {/* Selector de fecha del trabajo */}
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={styles.label}>{t.fechaTrabajo}</label>
+            <div style={styles.dateControls}>
+              <div style={styles.dateDisplay}>
+                📅 {formatearFecha(fechaTrabajo)}
+              </div>
+              
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  style={styles.dateButton}
+                  onClick={() => cambiarMes('anterior')}
+                  title={t.mesAnterior}
+                >
+                  ◀️
+                </button>
+                
+                <input
+                  type="month"
+                  style={styles.input}
+                  value={fechaTrabajo}
+                  onChange={(e) => setFechaTrabajo(e.target.value)}
+                  title={t.seleccionaMes}
+                />
+                
+                <button
+                  style={styles.dateButton}
+                  onClick={() => cambiarMes('siguiente')}
+                  title={t.mesSiguiente}
+                >
+                  ▶️
+                </button>
+                
+                <button
+                  style={styles.dateButton}
+                  onClick={restablecerMesActual}
+                  title={t.mesActual}
+                >
+                  🔄
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div style={styles.formGrid}>
             <div style={styles.formGroup}>
               <label style={styles.label}>{t.paciente}</label>
@@ -1806,6 +2265,9 @@ Color del diente: ${configDetallada.toothColor}
             </div>
           )}
         </div>
+
+        {/* Historial de servicios más usados */}
+        {clinicaSeleccionada && renderHistorialServicios()}
 
         {/* Selector de modo */}
         <div style={styles.modeSelector}>
@@ -1997,6 +2459,16 @@ Color del diente: ${configDetallada.toothColor}
             <div style={styles.trabajosContainer} id="trabajos-agregados-container">
               <h3 style={{ color: '#1e293b', marginBottom: '1.5rem', fontSize: '1.5rem' }}>
                 📋 {t.trabajosAgregados} ({trabajosAgregados.length})
+                {fechaTrabajo && (
+                  <span style={{ 
+                    fontSize: '1rem', 
+                    color: '#64748b', 
+                    marginLeft: '1rem',
+                    fontWeight: 'normal'
+                  }}>
+                    | Mes: {formatearFecha(fechaTrabajo)}
+                  </span>
+                )}
               </h3>
               
               {trabajosAgregados.length === 0 ? (
