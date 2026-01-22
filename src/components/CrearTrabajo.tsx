@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import Header from '../components/Header';
 
 interface CrearTrabajoProps {
   onBack: () => void;
 }
 
-// Definir interfaces para los datos de Supabase
 interface ClinicaSupabase {
   id: string;
   nombre: string;
@@ -55,7 +55,7 @@ interface TrabajoAgregado {
   precioUnitario: number;
   observaciones?: string;
   notaEspecial?: string;
-  fechaTrabajo?: Date; // Nueva propiedad para fecha del trabajo
+  fechaTrabajo?: Date;
 }
 
 type IdiomaType = 'es' | 'en';
@@ -75,7 +75,6 @@ interface ConfiguracionDetallada {
   toothColor: string;
 }
 
-// Mismas categorías que en GestionPrecios.tsx
 const categorias = {
   'todos': '📋 Todos',
   'fija': '🦷 Prótesis Fija',
@@ -90,7 +89,6 @@ const categorias = {
   'otros': '📦 Otros Servicios'
 };
 
-// Función de debounce para la búsqueda
 const useDebounce = (value: string, delay: number) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -107,7 +105,6 @@ const useDebounce = (value: string, delay: number) => {
   return debouncedValue;
 };
 
-// Interfaz para historial de servicios usados
 interface HistorialServicio {
   servicio_id: string;
   servicio_nombre: string;
@@ -143,6 +140,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [mostrarHistorial, setMostrarHistorial] = useState<boolean>(false);
   const [historialServicios, setHistorialServicios] = useState<HistorialServicio[]>([]);
   const [cargandoHistorial, setCargandoHistorial] = useState<boolean>(false);
+  const [user, setUser] = useState<any>(null);
   
   const [configDetallada, setConfigDetallada] = useState<ConfiguracionDetallada>({
     tooth: '',
@@ -159,15 +157,12 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     toothColor: 'A2'
   });
 
-  // UseEffect para mostrar/ocultar el botón flotante
   useEffect(() => {
     setShowFloatingCounter(trabajosAgregados.length > 0);
   }, [trabajosAgregados.length]);
 
-  // Usar debounce para la búsqueda (300ms)
   const terminoBusquedaDebounced = useDebounce(terminoBusqueda, 300);
 
-  // Setear fecha actual por defecto
   useEffect(() => {
     const hoy = new Date();
     const mes = String(hoy.getMonth() + 1).padStart(2, '0');
@@ -175,14 +170,31 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     setFechaTrabajo(`${año}-${mes}`);
   }, []);
 
-  // Cargar historial cuando se selecciona una clínica
   useEffect(() => {
     if (clinicaSeleccionada) {
       cargarHistorialServicios();
     }
   }, [clinicaSeleccionada]);
 
-  // Materiales organizados para modo detallado
+  useEffect(() => {
+    const cargarUsuario = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        const { data: perfilData } = await supabase
+          .from('perfiles_usuarios')
+          .select('*')
+          .eq('id', authUser.id)
+          .single();
+        
+        setUser({
+          ...authUser,
+          ...perfilData
+        });
+      }
+    };
+    cargarUsuario();
+  }, []);
+
   const materialCategories = [
     { 
       category: 'Dentición Residual', 
@@ -360,7 +372,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
   const t = textos[idioma];
 
-  // Cargar datos desde Supabase
   useEffect(() => {
     const cargarDatosIniciales = async () => {
       try {
@@ -373,7 +384,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           return;
         }
 
-        // Cargar clínicas del usuario (sin filtro de activo)
         const { data: clinicasData, error: clinicasError } = await supabase
           .from('clinicas')
           .select('*')
@@ -385,9 +395,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           throw clinicasError;
         }
         setClinicas(clinicasData || []);
-        console.log('Clínicas cargadas:', clinicasData?.length || 0);
 
-        // Cargar dentistas del usuario (sin filtro de activo)
         const { data: dentistasData, error: dentistasError } = await supabase
           .from('dentistas')
           .select('*')
@@ -399,9 +407,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           throw dentistasError;
         }
         setDentistas(dentistasData || []);
-        console.log('Dentistas cargados:', dentistasData?.length || 0);
 
-        // Cargar laboratoristas del usuario (sin filtro de activo)
         const { data: laboratoristasData, error: laboratoristasError } = await supabase
           .from('laboratoristas')
           .select('*')
@@ -413,9 +419,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           throw laboratoristasError;
         }
         setLaboratoristas(laboratoristasData || []);
-        console.log('Laboratoristas cargados:', laboratoristasData?.length || 0);
 
-        // Cargar servicios del usuario
         await cargarServicios();
 
       } catch (error: any) {
@@ -428,7 +432,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     cargarDatosIniciales();
   }, []);
 
-  // Función para cargar historial de servicios más usados
   const cargarHistorialServicios = async () => {
     if (!clinicaSeleccionada) return;
     
@@ -442,7 +445,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         return;
       }
 
-      // Consulta para obtener servicios más usados por esta clínica
       const { data, error } = await supabase
         .from('trabajos')
         .select(`
@@ -453,11 +455,10 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         .eq('usuario_id', user.id)
         .eq('clinica_id', clinicaSeleccionada)
         .order('created_at', { ascending: false })
-        .limit(100); // Últimos 100 trabajos para analizar
+        .limit(100);
 
       if (error) throw error;
 
-      // Procesar los datos para contar servicios más usados
       const historialMap = new Map<string, HistorialServicio>();
       
       data?.forEach(trabajo => {
@@ -487,10 +488,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         }
       });
 
-      // Convertir a array y ordenar por veces_usado
       const historialArray = Array.from(historialMap.values())
         .sort((a, b) => b.veces_usado - a.veces_usado)
-        .slice(0, 20); // Top 20 servicios más usados
+        .slice(0, 20);
 
       setHistorialServicios(historialArray);
       
@@ -522,7 +522,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
       if (error) throw error;
 
-      console.log('Servicios cargados desde Supabase:', data?.length || 0, 'servicios');
       setServicios(data || []);
 
     } catch (error: any) {
@@ -532,7 +531,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     }
   };
 
-  // Filtrar dentistas por clínica seleccionada
   const dentistasFiltrados = useMemo(() => {
     if (!clinicaSeleccionada) return dentistas;
     return dentistas.filter(dentista => dentista.clinica_id === clinicaSeleccionada);
@@ -548,18 +546,15 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     return colorMap[color] || '#fff';
   };
 
-  // Filtrar servicios por categoría y búsqueda con useMemo para optimización
   const serviciosFiltrados = useMemo(() => {
     if (servicios.length === 0) return [];
 
     let filtrados = servicios;
     
-    // Filtrar por categoría
     if (categoriaSeleccionada !== 'todos') {
       filtrados = filtrados.filter(servicio => servicio.categoria === categoriaSeleccionada);
     }
     
-    // Filtrar por término de búsqueda
     if (terminoBusquedaDebounced.trim()) {
       const terminoLower = terminoBusquedaDebounced.toLowerCase().trim();
       filtrados = filtrados.filter(servicio => 
@@ -571,7 +566,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     return filtrados;
   }, [servicios, categoriaSeleccionada, terminoBusquedaDebounced]);
 
-  // Formatear precio en CLP (igual que en GestionPrecios.tsx)
   const formatearPrecioCLP = (precio: number) => {
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',
@@ -581,7 +575,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     }).format(precio);
   };
 
-  // Formatear fecha en español
   const formatearFecha = (fechaStr: string) => {
     const [año, mes] = fechaStr.split('-');
     const fecha = new Date(parseInt(año), parseInt(mes) - 1, 1);
@@ -592,13 +585,11 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     });
   };
 
-  // Función para agregar trabajo en modo simple
   const agregarTrabajoSimple = (servicio: ServicioSupabase) => {
     const cantidad = cantidades[servicio.id] || 1;
     const piezaDental = piezasDentales[servicio.id] || '';
     const notaEspecial = notasServicios[servicio.id] || '';
     
-    // Convertir fecha string a Date
     let fechaTrabajoDate: Date | undefined;
     if (fechaTrabajo) {
       const [año, mes] = fechaTrabajo.split('-');
@@ -623,20 +614,17 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     setNotasServicios(prev => ({ ...prev, [servicio.id]: '' }));
   };
 
-  // Función para agregar desde el historial
   const agregarDesdeHistorial = (servicioHistorial: HistorialServicio) => {
-    // Buscar el servicio completo en la lista de servicios
     const servicioCompleto = servicios.find(s => s.id === servicioHistorial.servicio_id);
     
     if (servicioCompleto) {
       agregarTrabajoSimple(servicioCompleto);
     } else {
-      // Si no está en la lista actual, buscar en Supabase o crear uno temporal
       const servicioTemporal: ServicioSupabase = {
         id: servicioHistorial.servicio_id,
         nombre: servicioHistorial.servicio_nombre,
         categoria: servicioHistorial.categoria,
-        precio_base: 0, // Necesitaríamos cargar el precio real
+        precio_base: 0,
         activo: true,
         usuario_id: '',
         creado_en: new Date().toISOString(),
@@ -648,19 +636,16 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     }
   };
 
-  // Función para eliminar trabajo de la lista
   const eliminarTrabajo = (id: string) => {
     setTrabajosAgregados(trabajosAgregados.filter(t => t.id !== id));
   };
 
-  // Calcular total
   const calcularTotal = () => {
     return trabajosAgregados.reduce((total, trabajo) => 
       total + (trabajo.precioUnitario * trabajo.cantidad), 0
     );
   };
 
-  // Función principal para guardar el trabajo
   const finalizarTrabajo = async () => {
     if (!clinicaSeleccionada) {
       alert(idioma === 'es' ? 'Por favor selecciona una clínica' : 'Please select a clinic');
@@ -678,8 +663,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     }
 
     try {
-      console.log('🔍 Iniciando guardado de trabajo...');
-      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       
       if (userError) {
@@ -693,9 +676,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         return;
       }
 
-      console.log('✅ Usuario autenticado:', user.id);
-      
-      // Agrupar trabajos por paciente
       const trabajosPorPaciente = trabajosAgregados.reduce((acc, trabajo) => {
         const clave = `${trabajo.paciente}-${trabajo.rutPaciente}`;
         if (!acc[clave]) {
@@ -711,9 +691,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
       let trabajosGuardados = 0;
       
-      // Crear un trabajo en la base de datos POR CADA PACIENTE
       for (const [, grupo] of Object.entries(trabajosPorPaciente)) {
-        // Crear array de servicios para la base de datos
         const serviciosParaBD = grupo.trabajos.map(trabajo => ({
           servicio_id: trabajo.servicio.id,
           cantidad: trabajo.cantidad,
@@ -723,20 +701,16 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           nota_especial: trabajo.notaEspecial || trabajo.observaciones || ''
         }));
 
-        // Convertir fechaTrabajo a fecha de creación
         const [año, mes] = fechaTrabajo.split('-');
         const fechaCreacion = new Date(parseInt(año), parseInt(mes) - 1, 1);
         
-        // Calcular fecha de entrega (7 días después de la fecha de creación)
         const fechaEntrega = new Date(fechaCreacion);
         fechaEntrega.setDate(fechaEntrega.getDate() + 7);
 
-        // Calcular total para este paciente
         const totalPaciente = grupo.trabajos.reduce((total, trabajo) => 
           total + (trabajo.precioUnitario * trabajo.cantidad), 0
         );
 
-        // Datos del trabajo para ESTE PACIENTE
         const trabajoData = {
           paciente: grupo.paciente.trim(),
           rut_paciente: grupo.rutPaciente || '',
@@ -753,12 +727,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           ).join(' | '),
           modo: 'clinica',
           usuario_id: user.id,
-          mes_trabajo: fechaTrabajo // Nuevo campo para filtrar por mes
+          mes_trabajo: fechaTrabajo
         };
 
-        console.log(`📝 Guardando trabajo para paciente: ${grupo.paciente}`, trabajoData);
-
-        // Guardar en Supabase
         const { data: trabajoInsertado, error: errorTrabajo } = await supabase
           .from('trabajos')
           .insert(trabajoData)
@@ -767,7 +738,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
         if (errorTrabajo) throw errorTrabajo;
 
-        console.log(`✅ Trabajo insertado para ${grupo.paciente}:`, trabajoInsertado);
         trabajosGuardados++;
       }
 
@@ -777,7 +747,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       
       alert(mensajeExito);
       
-      // Limpiar todo después de guardar exitosamente
       limpiarTodo();
       
     } catch (error: any) {
@@ -791,23 +760,19 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     }
   };
 
-  // Actualizar cantidad
   const actualizarCantidad = (servicioId: string, cantidad: number) => {
     if (cantidad < 1) cantidad = 1;
     setCantidades(prev => ({ ...prev, [servicioId]: cantidad }));
   };
 
-  // Actualizar pieza dental
   const actualizarPiezaDental = (servicioId: string, pieza: string) => {
     setPiezasDentales(prev => ({ ...prev, [servicioId]: pieza }));
   };
 
-  // Actualizar nota especial
   const actualizarNota = (servicioId: string, nota: string) => {
     setNotasServicios(prev => ({ ...prev, [servicioId]: nota }));
   };
 
-  // Navegar entre meses
   const cambiarMes = (direccion: 'anterior' | 'siguiente') => {
     const [año, mes] = fechaTrabajo.split('-').map(Number);
     let nuevoMes = mes;
@@ -830,7 +795,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     setFechaTrabajo(`${nuevoAño}-${String(nuevoMes).padStart(2, '0')}`);
   };
 
-  // Restablecer al mes actual
   const restablecerMesActual = () => {
     const hoy = new Date();
     const mes = String(hoy.getMonth() + 1).padStart(2, '0');
@@ -840,7 +804,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
   const puedeFinalizar = clinicaSeleccionada && trabajosAgregados.length > 0 && fechaTrabajo;
 
-  // ==================== FUNCIONES MODO DETALLADO ====================
   const toggleMaterial = (material: string) => {
     const nuevosMateriales = configDetallada.selectedMaterials.includes(material)
       ? configDetallada.selectedMaterials.filter(m => m !== material)
@@ -904,7 +867,6 @@ Color del diente: ${configDetallada.toothColor}
       created_at: new Date().toISOString()
     };
 
-    // Convertir fecha string a Date
     let fechaTrabajoDate: Date | undefined;
     if (fechaTrabajo) {
       const [año, mes] = fechaTrabajo.split('-');
@@ -926,7 +888,6 @@ Color del diente: ${configDetallada.toothColor}
 
     setTrabajosAgregados([...trabajosAgregados, trabajo]);
     
-    // Resetear configuración detallada
     setConfigDetallada({
       tooth: '',
       materialConfig: 'Default',
@@ -945,7 +906,6 @@ Color del diente: ${configDetallada.toothColor}
     alert(idioma === 'es' ? '¡Trabajo detallado agregado exitosamente!' : 'Detailed work added successfully!');
   };
 
-  // Limpiar todo
   const limpiarTodo = () => {
     const confirmMessage = idioma === 'es'
       ? '¿Estás seguro de que quieres limpiar todo el trabajo en progreso?'
@@ -980,7 +940,6 @@ Color del diente: ${configDetallada.toothColor}
       setShowFloatingCounter(false);
       setMostrarHistorial(false);
       
-      // Restablecer fecha al mes actual
       const hoy = new Date();
       const mes = String(hoy.getMonth() + 1).padStart(2, '0');
       const año = hoy.getFullYear();
@@ -990,28 +949,22 @@ Color del diente: ${configDetallada.toothColor}
     }
   };
 
-  // ==================== MANEJO DE CAMBIO DE PACIENTE ====================
-  // Manejar cambio de nombre de paciente
   const handleNombrePacienteChange = (nuevoNombre: string) => {
     const nombreAnterior = nombrePaciente;
     setNombrePaciente(nuevoNombre);
     
-    // Si hay trabajos agregados y el nombre cambió (no está vacío)
     if (trabajosAgregados.length > 0 && nuevoNombre.trim() !== '' && nombreAnterior !== nuevoNombre) {
-      // Verificar si algún trabajo tiene un nombre diferente al nuevo
       const trabajosConNombreDiferente = trabajosAgregados.filter(
         trabajo => trabajo.paciente !== nombreAnterior
       );
       
-      // Si todos los trabajos tienen el mismo nombre que el anterior, preguntar si actualizar
       if (trabajosConNombreDiferente.length === 0 && nombreAnterior.trim() !== '') {
         const confirmar = window.confirm(t.actualizarPaciente);
         if (confirmar) {
-          // Actualizar todos los trabajos al nuevo nombre
           const trabajosActualizados = trabajosAgregados.map(trabajo => ({
             ...trabajo,
             paciente: nuevoNombre,
-            rutPaciente: rutPaciente // También actualizar RUT si cambió
+            rutPaciente: rutPaciente
           }));
           setTrabajosAgregados(trabajosActualizados);
         }
@@ -1019,14 +972,11 @@ Color del diente: ${configDetallada.toothColor}
     }
   };
 
-  // Manejar cambio de RUT de paciente
   const handleRutPacienteChange = (nuevoRut: string) => {
     const rutAnterior = rutPaciente;
     setRutPaciente(nuevoRut);
     
-    // Si hay trabajos agregados y el RUT cambió
     if (trabajosAgregados.length > 0 && rutAnterior !== nuevoRut) {
-      // Actualizar RUT en todos los trabajos
       const trabajosActualizados = trabajosAgregados.map(trabajo => ({
         ...trabajo,
         rutPaciente: nuevoRut
@@ -1035,39 +985,16 @@ Color del diente: ${configDetallada.toothColor}
     }
   };
 
-  // Estilos mejorados con TypeScript
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
   const styles: { [key: string]: React.CSSProperties } = {
     container: {
       minHeight: '100vh',
       backgroundColor: '#f8fafc',
       color: '#1e293b',
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-    },
-    header: {
-      padding: '1rem 2rem',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      backgroundColor: 'white',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-      borderBottom: '1px solid #e2e8f0',
-      position: 'sticky',
-      top: 0,
-      zIndex: 100
-    },
-    logo: {
-      fontSize: '1.75rem',
-      fontWeight: '700',
-      color: '#3b82f6',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      cursor: 'pointer'
-    },
-    userSection: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '1.5rem'
     },
     mainContent: {
       padding: '2rem',
@@ -1095,7 +1022,6 @@ Color del diente: ${configDetallada.toothColor}
       marginBottom: '2rem',
       lineHeight: '1.6'
     },
-    // Botón flotante
     floatingCounter: {
       position: 'fixed',
       bottom: '20px',
@@ -1116,28 +1042,6 @@ Color del diente: ${configDetallada.toothColor}
       transition: 'transform 0.3s, box-shadow 0.3s',
       border: '3px solid white'
     },
-    languageSelector: {
-      display: 'flex',
-      gap: '0.5rem',
-      alignItems: 'center'
-    },
-    languageButton: {
-      padding: '0.5rem 1rem',
-      border: '1px solid #cbd5e1',
-      borderRadius: '6px',
-      backgroundColor: 'white',
-      color: '#475569',
-      cursor: 'pointer',
-      fontSize: '14px',
-      fontWeight: '500',
-      transition: 'all 0.2s ease'
-    },
-    languageButtonActive: {
-      backgroundColor: '#3b82f6',
-      color: 'white',
-      border: '1px solid #3b82f6'
-    },
-    // Selector de modo
     modeSelector: {
       display: 'flex',
       gap: '1rem',
@@ -1205,7 +1109,6 @@ Color del diente: ${configDetallada.toothColor}
       backgroundColor: 'white',
       cursor: 'pointer'
     },
-    // Controles de fecha
     dateControls: {
       display: 'flex',
       alignItems: 'center',
@@ -1243,7 +1146,6 @@ Color del diente: ${configDetallada.toothColor}
       color: 'white',
       border: '1px solid #3b82f6'
     },
-    // Historial de servicios
     historialContainer: {
       backgroundColor: 'white',
       borderRadius: '0.75rem',
@@ -1348,7 +1250,6 @@ Color del diente: ${configDetallada.toothColor}
       color: '#64748b',
       fontSize: '1.25rem'
     },
-    // Filtros de categoría
     filtersContainer: {
       backgroundColor: 'white',
       padding: '1.5rem',
@@ -1381,7 +1282,6 @@ Color del diente: ${configDetallada.toothColor}
       color: 'white',
       border: '1px solid #3b82f6'
     },
-    // Servicios Grid
     serviciosGrid: {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
@@ -1484,7 +1384,6 @@ Color del diente: ${configDetallada.toothColor}
       gap: '0.5rem',
       transition: 'background-color 0.2s'
     },
-    // Modo detallado - 3 columnas
     detailedContainer: {
       backgroundColor: 'white',
       borderRadius: '0.75rem',
@@ -1509,7 +1408,6 @@ Color del diente: ${configDetallada.toothColor}
       borderBottom: '2px solid #3b82f6',
       marginBottom: '1rem'
     },
-    // Columna izquierda: Tipos de trabajos
     categoryCard: {
       border: '1px solid #e2e8f0',
       borderRadius: '0.5rem',
@@ -1563,7 +1461,6 @@ Color del diente: ${configDetallada.toothColor}
       fontSize: '14px',
       color: '#4a5568'
     },
-    // Columna central: Material a utilizar
     materialTypeGrid: {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
@@ -1595,7 +1492,6 @@ Color del diente: ${configDetallada.toothColor}
       color: '#059669',
       fontWeight: '600'
     },
-    // Columna derecha: Opciones y parámetros
     optionGroup: {
       border: '1px solid #e2e8f0',
       borderRadius: '0.5rem',
@@ -1631,7 +1527,6 @@ Color del diente: ${configDetallada.toothColor}
       backgroundColor: '#10b981',
       border: '2px solid #10b981'
     },
-    // Sliders
     sliderContainer: {
       padding: '1rem 0'
     },
@@ -1653,7 +1548,6 @@ Color del diente: ${configDetallada.toothColor}
       outline: 'none',
       WebkitAppearance: 'none'
     },
-    // Selector de color
     colorGrid: {
       display: 'grid',
       gridTemplateColumns: 'repeat(4, 1fr)',
@@ -1680,14 +1574,12 @@ Color del diente: ${configDetallada.toothColor}
       transform: 'scale(1.1)',
       boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
     },
-    // Configuración de diente
     toothConfig: {
       backgroundColor: '#f8fafc',
       borderRadius: '0.5rem',
       padding: '1.5rem',
       marginBottom: '1rem'
     },
-    // Botón para crear trabajo detallado
     createButton: {
       marginTop: '2rem',
       textAlign: 'center'
@@ -1772,7 +1664,6 @@ Color del diente: ${configDetallada.toothColor}
     }
   };
 
-  // Renderizar historial de servicios
   const renderHistorialServicios = () => (
     <div style={styles.historialContainer}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -1838,10 +1729,8 @@ Color del diente: ${configDetallada.toothColor}
     </div>
   );
 
-  // Renderizar modo detallado
   const renderModoDetallado = () => (
     <div style={styles.detailedContainer}>
-      {/* Columna izquierda: Tipos de trabajos */}
       <div style={styles.column}>
         <h3 style={styles.columnTitle}>{t.tiposTrabajos}</h3>
         
@@ -1870,7 +1759,6 @@ Color del diente: ${configDetallada.toothColor}
         ))}
       </div>
 
-      {/* Columna central: Material a utilizar */}
       <div style={styles.column}>
         <h3 style={styles.columnTitle}>{t.materialUtilizar}</h3>
         
@@ -1933,7 +1821,6 @@ Color del diente: ${configDetallada.toothColor}
         </div>
       </div>
 
-      {/* Columna derecha: Opciones y parámetros */}
       <div style={styles.column}>
         <h3 style={styles.columnTitle}>{t.opcionesParametros}</h3>
         
@@ -2053,16 +1940,16 @@ Color del diente: ${configDetallada.toothColor}
     </div>
   );
 
-  // Mostrar estado de carga
   if (cargandoDatos) {
     return (
       <div style={styles.container}>
-        <header style={styles.header}>
-          <div style={styles.logo} onClick={onBack}>
-            <span>🦷</span>
-            DentalFlow
-          </div>
-        </header>
+        <Header 
+          user={user}
+          onLogout={handleLogout}
+          showBackButton={true}
+          onBack={onBack}
+          title={t.title}
+        />
         <main style={styles.mainContent}>
           <div style={styles.loadingContainer}>
             <div style={{ fontSize: '3rem' }}>🔄</div>
@@ -2075,40 +1962,15 @@ Color del diente: ${configDetallada.toothColor}
 
   return (
     <div style={styles.container}>
-      {/* Header */}
-      <header style={styles.header}>
-        <div style={styles.logo} onClick={onBack}>
-          <span>🦷</span>
-          DentalFlow
-        </div>
-        
-        <div style={styles.userSection}>
-          <div style={styles.languageSelector}>
-            <button
-              style={{
-                ...styles.languageButton,
-                ...(idioma === 'es' ? styles.languageButtonActive : {})
-              }}
-              onClick={() => setIdioma('es')}
-            >
-              🇪🇸 Español
-            </button>
-            <button
-              style={{
-                ...styles.languageButton,
-                ...(idioma === 'en' ? styles.languageButtonActive : {})
-              }}
-              onClick={() => setIdioma('en')}
-            >
-              🇺🇸 English
-            </button>
-          </div>
-        </div>
-      </header>
+      <Header 
+        user={user}
+        onLogout={handleLogout}
+        showBackButton={true}
+        onBack={onBack}
+        title={t.title}
+      />
 
-      {/* Main Content */}
       <main style={styles.mainContent}>
-        {/* Welcome Section */}
         <section style={styles.welcomeSection}>
           <h1 style={styles.welcomeTitle}>
             {t.title}
@@ -2120,7 +1982,6 @@ Color del diente: ${configDetallada.toothColor}
           </p>
         </section>
 
-        {/* Información del paciente */}
         <div style={styles.formContainer}>
           <h3 style={{ color: '#1e293b', marginBottom: '1.5rem', fontSize: '1.25rem' }}>
             📋 {idioma === 'es' ? 'Información del Trabajo' : 'Work Information'}
@@ -2182,7 +2043,6 @@ Color del diente: ${configDetallada.toothColor}
             </div>
           </div>
 
-          {/* Selector de fecha del trabajo */}
           <div style={{ marginBottom: '1.5rem' }}>
             <label style={styles.label}>{t.fechaTrabajo}</label>
             <div style={styles.dateControls}>
@@ -2266,10 +2126,8 @@ Color del diente: ${configDetallada.toothColor}
           )}
         </div>
 
-        {/* Historial de servicios más usados */}
         {clinicaSeleccionada && renderHistorialServicios()}
 
-        {/* Selector de modo */}
         <div style={styles.modeSelector}>
           <button
             style={{
@@ -2291,7 +2149,6 @@ Color del diente: ${configDetallada.toothColor}
           </button>
         </div>
 
-        {/* Botón para limpiar todo */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
           <button
             style={styles.clearButton}
@@ -2303,13 +2160,10 @@ Color del diente: ${configDetallada.toothColor}
           </button>
         </div>
 
-        {/* Modo seleccionado */}
         {modoDetallado ? (
           renderModoDetallado()
         ) : (
-          /* Modo Simple */
           <div>
-            {/* Buscador de servicios */}
             <div style={styles.searchContainer}>
               <div style={styles.searchIcon}>🔍</div>
               <input
@@ -2336,7 +2190,6 @@ Color del diente: ${configDetallada.toothColor}
               )}
             </div>
 
-            {/* Filtros de categoría */}
             <div style={styles.filtersContainer}>
               <h4 style={{ marginBottom: '1rem', color: '#1e293b' }}>
                 {idioma === 'es' ? 'Filtrar por categoría:' : 'Filter by category:'}
@@ -2357,7 +2210,6 @@ Color del diente: ${configDetallada.toothColor}
               </div>
             </div>
 
-            {/* Información de búsqueda */}
             {terminoBusquedaDebounced.trim() && serviciosFiltrados.length > 0 && (
               <div style={styles.resultadosInfo}>
                 {t.resultadosPara} "<strong>{terminoBusquedaDebounced}</strong>"
@@ -2366,7 +2218,6 @@ Color del diente: ${configDetallada.toothColor}
               </div>
             )}
 
-            {/* Lista de servicios */}
             {cargandoServicios ? (
               <div style={styles.loadingContainer}>
                 <div style={{ fontSize: '3rem' }}>🔄</div>
@@ -2455,7 +2306,6 @@ Color del diente: ${configDetallada.toothColor}
               </div>
             )}
 
-            {/* Lista de Trabajos Agregados */}
             <div style={styles.trabajosContainer} id="trabajos-agregados-container">
               <h3 style={{ color: '#1e293b', marginBottom: '1.5rem', fontSize: '1.5rem' }}>
                 📋 {t.trabajosAgregados} ({trabajosAgregados.length})
@@ -2482,7 +2332,6 @@ Color del diente: ${configDetallada.toothColor}
                 </div>
               ) : (
                 <>
-                  {/* Agrupar trabajos por paciente */}
                   {Object.entries(
                     trabajosAgregados.reduce((acc, trabajo) => {
                       const clave = `${trabajo.paciente}-${trabajo.rutPaciente}`;
@@ -2552,7 +2401,6 @@ Color del diente: ${configDetallada.toothColor}
                         </div>
                       </div>
                       
-                      {/* Lista de trabajos para este paciente */}
                       {grupo.trabajos.map((trabajo, trabajoIndex) => (
                         <div key={trabajo.id} style={{
                           ...styles.trabajoItem,
@@ -2610,7 +2458,6 @@ Color del diente: ${configDetallada.toothColor}
                         </div>
                       ))}
                       
-                      {/* Total por paciente */}
                       <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -2630,7 +2477,6 @@ Color del diente: ${configDetallada.toothColor}
                     </div>
                   ))}
                   
-                  {/* Total General */}
                   <div style={styles.totalContainer}>
                     <span style={styles.totalText}>{t.total}:</span>
                     <span style={styles.totalAmount}>{formatearPrecioCLP(calcularTotal())}</span>
@@ -2668,7 +2514,6 @@ Color del diente: ${configDetallada.toothColor}
         )}
       </main>
 
-      {/* Botón flotante */}
       {showFloatingCounter && (
         <div 
           style={styles.floatingCounter}

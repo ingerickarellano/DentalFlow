@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
+import Header from './Header'; // Importar el Header
 
 interface GestionPreciosProps {
   onBack?: () => void;
@@ -23,6 +24,18 @@ interface FilaPlantillaExcel {
   'Categoría': string;
   'Nombre del Servicio': string;
   'Precio Base': number;
+}
+
+interface User {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: string;
+  plan?: string;
+  fecha_expiracion?: string | null;
+  suscripcion_activa?: boolean;
+  laboratorio?: string;
+  telefono?: string;
 }
 
 const categorias = {
@@ -80,6 +93,8 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string>('');
   const [archivoExcel, setArchivoExcel] = useState<File | null>(null);
+  const [usuario, setUsuario] = useState<User | null>(null);
+  const [cerrandoSesion, setCerrandoSesion] = useState(false);
   const [formData, setFormData] = useState({
     categoria: 'fija',
     nombre: '',
@@ -87,8 +102,50 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
   });
 
   useEffect(() => {
+    cargarUsuario();
     cargarServicios();
   }, []);
+
+  const cargarUsuario = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: userData } = await supabase
+        .from('perfiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (userData) {
+        setUsuario({
+          id: userData.id,
+          email: userData.email || user.email || '',
+          nombre: userData.nombre || 'Usuario',
+          rol: userData.rol || 'usuario',
+          plan: userData.plan,
+          fecha_expiracion: userData.fecha_expiracion,
+          suscripcion_activa: userData.suscripcion_activa,
+          laboratorio: userData.laboratorio,
+          telefono: userData.telefono
+        });
+      }
+    } catch (error) {
+      console.error('Error cargando usuario:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      setCerrandoSesion(true);
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+    } finally {
+      setCerrandoSesion(false);
+    }
+  };
 
   const cargarServicios = async () => {
     try {
@@ -438,7 +495,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     container: {
       padding: '20px',
       backgroundColor: '#f8f9fa',
-      minHeight: '100vh'
+      minHeight: 'calc(100vh - 64px)'
     },
     header: {
       display: 'flex',
@@ -792,248 +849,256 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <button style={styles.backButton} onClick={handleBack}>
-            ← Volver
-          </button>
-          <h1 style={styles.title}>Gestión de Precios</h1>
-        </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button style={styles.secondaryButton} onClick={descargarPlantillaExcel}>
-            📥 Plantilla Excel
-          </button>
-          <button style={styles.secondaryButton} onClick={() => setMostrarModalExcel(true)}>
-            📊 Cargar Excel
-          </button>
-          <button style={styles.primaryButton} onClick={() => abrirModal()}>
-            ➕ Nuevo Servicio
-          </button>
-        </div>
-      </div>
-
-      {error && <div style={styles.errorText}>❌ {error}</div>}
-
-      <div style={styles.statsGrid}>
-        <div style={styles.statCard}>
-          <div style={styles.statLabel}>Total Servicios</div>
-          <div style={styles.statNumber}>{servicios.length}</div>
-        </div>
-        <div style={styles.statCard}>
-          <div style={styles.statLabel}>Prótesis Fija</div>
-          <div style={styles.statNumber}>{servicios.filter(s => s.categoria === 'fija').length}</div>
-        </div>
-        <div style={styles.statCard}>
-          <div style={styles.statLabel}>Prótesis Removible</div>
-          <div style={styles.statNumber}>{servicios.filter(s => s.categoria === 'removible').length}</div>
-        </div>
-        <div style={styles.statCard}>
-          <div style={styles.statLabel}>Implantes</div>
-          <div style={styles.statNumber}>{servicios.filter(s => s.categoria === 'implantes').length}</div>
-        </div>
-      </div>
-
-      <div style={styles.filters}>
-        <div style={styles.filterTitle}>Filtrar por categoría:</div>
-        <div style={styles.filterButtons}>
-          <button
-            style={{
-              ...styles.filterButton,
-              ...(filtroCategoria === 'todos' ? styles.filterButtonActive : {})
-            }}
-            onClick={() => setFiltroCategoria('todos')}
-          >
-            Todos ({servicios.length})
-          </button>
-          {Object.entries(categorias).map(([key, nombre]) => (
-            <button
-              key={key}
-              style={{
-                ...styles.filterButton,
-                ...(filtroCategoria === key ? styles.filterButtonActive : {})
-              }}
-              onClick={() => setFiltroCategoria(key)}
-            >
-              {nombre} ({servicios.filter(s => s.categoria === key).length})
+    <>
+      <Header 
+        user={usuario || undefined}
+        onLogout={handleLogout}
+        cerrandoSesion={cerrandoSesion}
+        showBackButton={true}
+        onBack={handleBack}
+        title="Gestión de Precios"
+        showTitle={true}
+      />
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <h1 style={styles.title}>Gestión de Precios</h1>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button style={styles.secondaryButton} onClick={descargarPlantillaExcel}>
+              📥 Plantilla Excel
             </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={styles.contentCard}>
-        {cargando ? (
-          <div style={styles.loadingText}>Cargando servicios...</div>
-        ) : serviciosFiltrados.length === 0 ? (
-          <div style={styles.emptyState}>
-            <h3 style={styles.emptyStateTitle}>No hay servicios</h3>
-            <p style={styles.emptyStateText}>
-              {filtroCategoria !== 'todos' 
-                ? `No hay servicios en la categoría "${categorias[filtroCategoria as keyof typeof categorias]}"`
-                : 'Comienza agregando tu primer servicio'
-              }
-            </p>
+            <button style={styles.secondaryButton} onClick={() => setMostrarModalExcel(true)}>
+              📊 Cargar Excel
+            </button>
             <button style={styles.primaryButton} onClick={() => abrirModal()}>
-              ➕ Agregar Primer Servicio
+              ➕ Nuevo Servicio
             </button>
           </div>
-        ) : (
-          <div style={styles.serviciosGrid}>
-            {serviciosFiltrados.map(servicio => (
-              <div key={servicio.id} style={styles.servicioCard}>
-                <div style={styles.cardHeader}>
-                  <h3 style={styles.servicioNombre}>{servicio.nombre}</h3>
-                  <span style={styles.categoriaBadge}>
-                    {categorias[servicio.categoria as keyof typeof categorias]}
-                  </span>
-                </div>
+        </div>
 
-                <div style={styles.precio}>
-                  {formatearPrecioCLP(servicio.precio_base)}
-                </div>
+        {error && <div style={styles.errorText}>❌ {error}</div>}
 
-                <div style={styles.acciones}>
-                  <button
-                    style={{...styles.actionButton, ...styles.editButton}}
-                    onClick={() => abrirModal(servicio)}
-                  >
-                    ✏️ Editar
-                  </button>
+        <div style={styles.statsGrid}>
+          <div style={styles.statCard}>
+            <div style={styles.statLabel}>Total Servicios</div>
+            <div style={styles.statNumber}>{servicios.length}</div>
+          </div>
+          <div style={styles.statCard}>
+            <div style={styles.statLabel}>Prótesis Fija</div>
+            <div style={styles.statNumber}>{servicios.filter(s => s.categoria === 'fija').length}</div>
+          </div>
+          <div style={styles.statCard}>
+            <div style={styles.statLabel}>Prótesis Removible</div>
+            <div style={styles.statNumber}>{servicios.filter(s => s.categoria === 'removible').length}</div>
+          </div>
+          <div style={styles.statCard}>
+            <div style={styles.statLabel}>Implantes</div>
+            <div style={styles.statNumber}>{servicios.filter(s => s.categoria === 'implantes').length}</div>
+          </div>
+        </div>
+
+        <div style={styles.filters}>
+          <div style={styles.filterTitle}>Filtrar por categoría:</div>
+          <div style={styles.filterButtons}>
+            <button
+              style={{
+                ...styles.filterButton,
+                ...(filtroCategoria === 'todos' ? styles.filterButtonActive : {})
+              }}
+              onClick={() => setFiltroCategoria('todos')}
+            >
+              Todos ({servicios.length})
+            </button>
+            {Object.entries(categorias).map(([key, nombre]) => (
+              <button
+                key={key}
+                style={{
+                  ...styles.filterButton,
+                  ...(filtroCategoria === key ? styles.filterButtonActive : {})
+                }}
+                onClick={() => setFiltroCategoria(key)}
+              >
+                {nombre} ({servicios.filter(s => s.categoria === key).length})
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={styles.contentCard}>
+          {cargando ? (
+            <div style={styles.loadingText}>Cargando servicios...</div>
+          ) : serviciosFiltrados.length === 0 ? (
+            <div style={styles.emptyState}>
+              <h3 style={styles.emptyStateTitle}>No hay servicios</h3>
+              <p style={styles.emptyStateText}>
+                {filtroCategoria !== 'todos' 
+                  ? `No hay servicios en la categoría "${categorias[filtroCategoria as keyof typeof categorias]}"`
+                  : 'Comienza agregando tu primer servicio'
+                }
+              </p>
+              <button style={styles.primaryButton} onClick={() => abrirModal()}>
+                ➕ Agregar Primer Servicio
+              </button>
+            </div>
+          ) : (
+            <div style={styles.serviciosGrid}>
+              {serviciosFiltrados.map(servicio => (
+                <div key={servicio.id} style={styles.servicioCard}>
+                  <div style={styles.cardHeader}>
+                    <h3 style={styles.servicioNombre}>{servicio.nombre}</h3>
+                    <span style={styles.categoriaBadge}>
+                      {categorias[servicio.categoria as keyof typeof categorias]}
+                    </span>
+                  </div>
+
+                  <div style={styles.precio}>
+                    {formatearPrecioCLP(servicio.precio_base)}
+                  </div>
+
+                  <div style={styles.acciones}>
+                    <button
+                      style={{...styles.actionButton, ...styles.editButton}}
+                      onClick={() => abrirModal(servicio)}
+                    >
+                      ✏️ Editar
+                    </button>
+                    
+                    <button
+                      style={{...styles.actionButton, ...styles.deleteButton}}
+                      onClick={() => eliminarServicio(servicio)}
+                    >
+                      🗑️ Eliminar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {mostrarModal && (
+          <div style={styles.modalOverlay} onClick={cerrarModal}>
+            <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h2 style={styles.modalTitle}>
+                  {servicioEditando ? 'Editar Servicio' : 'Nuevo Servicio'}
+                </h2>
+                <button style={styles.closeButton} onClick={cerrarModal}>
+                  ×
+                </button>
+              </div>
+
+              <div style={styles.modalBody}>
+                {error && <div style={styles.errorText}>{error}</div>}
+
+                <form onSubmit={guardarServicio}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Categoría *</label>
+                    <select 
+                      style={styles.select}
+                      value={formData.categoria}
+                      onChange={(e) => setFormData({...formData, categoria: e.target.value})}
+                      required
+                    >
+                      {Object.entries(categorias).map(([key, nombre]) => (
+                        <option key={key} value={key}>{nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Nombre del Servicio *</label>
+                    <input
+                      type="text"
+                      style={styles.input}
+                      value={formData.nombre}
+                      onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                      placeholder="Ej: Corona de Zirconio Personalizada"
+                      required
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>Precio Base (CLP) *</label>
+                    <input
+                      type="number"
+                      style={styles.input}
+                      value={formData.precioBase}
+                      onChange={(e) => setFormData({...formData, precioBase: e.target.value})}
+                      min="0"
+                      step="100"
+                      placeholder="0"
+                      required
+                    />
+                  </div>
+
+                  <div style={styles.modalFooter}>
+                    <button type="button" style={styles.cancelButton} onClick={cerrarModal}>
+                      Cancelar
+                    </button>
+                    <button type="submit" style={styles.saveButton}>
+                      {servicioEditando ? 'Actualizar' : 'Crear'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {mostrarModalExcel && (
+          <div style={styles.modalOverlay} onClick={() => setMostrarModalExcel(false)}>
+            <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h2 style={styles.modalTitle}>Cargar desde Excel</h2>
+                <button style={styles.closeButton} onClick={() => setMostrarModalExcel(false)}>
+                  ×
+                </button>
+              </div>
+
+              <div style={styles.modalBody}>
+                {error && <div style={styles.errorText}>{error}</div>}
+
+                <div style={styles.excelSection}>
+                  <h3 style={styles.excelTitle}>Instrucciones</h3>
+                  <p style={styles.excelDescription}>
+                    Descarga la plantilla, completa los datos y súbelos aquí.
+                  </p>
+
+                  <div style={styles.categoryGrid}>
+                    {Object.entries(categorias).map(([key, nombre]) => (
+                      <div key={key} style={styles.categoryItem}>
+                        {nombre}
+                      </div>
+                    ))}
+                  </div>
                   
-                  <button
-                    style={{...styles.actionButton, ...styles.deleteButton}}
-                    onClick={() => eliminarServicio(servicio)}
-                  >
-                    🗑️ Eliminar
-                  </button>
+                  <div style={styles.fileInput}>
+                    {archivoExcel ? `📁 ${archivoExcel.name}` : '📎 Seleccionar archivo Excel'}
+                  </div>
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls"
+                    style={{ display: 'none' }}
+                    onChange={(e) => setArchivoExcel(e.target.files?.[0] || null)}
+                  />
+                  
+                  <div style={styles.modalFooter}>
+                    <button style={styles.cancelButton} onClick={() => setMostrarModalExcel(false)}>
+                      Cancelar
+                    </button>
+                    <button style={styles.saveButton} onClick={cargarDesdeExcel}>
+                      Cargar
+                    </button>
+                  </div>
                 </div>
               </div>
-            ))}
+            </div>
           </div>
         )}
       </div>
-
-      {mostrarModal && (
-        <div style={styles.modalOverlay} onClick={cerrarModal}>
-          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>
-                {servicioEditando ? 'Editar Servicio' : 'Nuevo Servicio'}
-              </h2>
-              <button style={styles.closeButton} onClick={cerrarModal}>
-                ×
-              </button>
-            </div>
-
-            <div style={styles.modalBody}>
-              {error && <div style={styles.errorText}>{error}</div>}
-
-              <form onSubmit={guardarServicio}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Categoría *</label>
-                  <select 
-                    style={styles.select}
-                    value={formData.categoria}
-                    onChange={(e) => setFormData({...formData, categoria: e.target.value})}
-                    required
-                  >
-                    {Object.entries(categorias).map(([key, nombre]) => (
-                      <option key={key} value={key}>{nombre}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Nombre del Servicio *</label>
-                  <input
-                    type="text"
-                    style={styles.input}
-                    value={formData.nombre}
-                    onChange={(e) => setFormData({...formData, nombre: e.target.value})}
-                    placeholder="Ej: Corona de Zirconio Personalizada"
-                    required
-                  />
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>Precio Base (CLP) *</label>
-                  <input
-                    type="number"
-                    style={styles.input}
-                    value={formData.precioBase}
-                    onChange={(e) => setFormData({...formData, precioBase: e.target.value})}
-                    min="0"
-                    step="100"
-                    placeholder="0"
-                    required
-                  />
-                </div>
-
-                <div style={styles.modalFooter}>
-                  <button type="button" style={styles.cancelButton} onClick={cerrarModal}>
-                    Cancelar
-                  </button>
-                  <button type="submit" style={styles.saveButton}>
-                    {servicioEditando ? 'Actualizar' : 'Crear'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {mostrarModalExcel && (
-        <div style={styles.modalOverlay} onClick={() => setMostrarModalExcel(false)}>
-          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Cargar desde Excel</h2>
-              <button style={styles.closeButton} onClick={() => setMostrarModalExcel(false)}>
-                ×
-              </button>
-            </div>
-
-            <div style={styles.modalBody}>
-              {error && <div style={styles.errorText}>{error}</div>}
-
-              <div style={styles.excelSection}>
-                <h3 style={styles.excelTitle}>Instrucciones</h3>
-                <p style={styles.excelDescription}>
-                  Descarga la plantilla, completa los datos y súbelos aquí.
-                </p>
-
-                <div style={styles.categoryGrid}>
-                  {Object.entries(categorias).map(([key, nombre]) => (
-                    <div key={key} style={styles.categoryItem}>
-                      {nombre}
-                    </div>
-                  ))}
-                </div>
-                
-                <div style={styles.fileInput}>
-                  {archivoExcel ? `📁 ${archivoExcel.name}` : '📎 Seleccionar archivo Excel'}
-                </div>
-                <input
-                  type="file"
-                  accept=".xlsx, .xls"
-                  style={{ display: 'none' }}
-                  onChange={(e) => setArchivoExcel(e.target.files?.[0] || null)}
-                />
-                
-                <div style={styles.modalFooter}>
-                  <button style={styles.cancelButton} onClick={() => setMostrarModalExcel(false)}>
-                    Cancelar
-                  </button>
-                  <button style={styles.saveButton} onClick={cargarDesdeExcel}>
-                    Cargar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 };
 

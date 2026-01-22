@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import Header from '../components/Header';
 
 interface DashboardUser {
   id: string;
@@ -305,80 +306,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       backgroundColor: '#f8fafc',
       color: '#1e293b',
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-    },
-    header: {
-      padding: '1rem 2rem',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      backgroundColor: 'white',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-      borderBottom: '1px solid #e2e8f0',
-      position: 'sticky' as const,
-      top: 0,
-      zIndex: 100
-    },
-    logoContainer: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.75rem',
-      cursor: 'pointer'
-    },
-    logoImage: {
-      height: '38px',
-      width: 'auto',
-      objectFit: 'contain' as const
-    },
-    logoText: {
-      fontSize: '1.75rem',
-      fontWeight: '700',
-      color: '#3b82f6',
-    },
-    userSection: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '1.5rem'
-    },
-    userInfo: {
-      textAlign: 'right' as const
-    },
-    userName: {
-      fontSize: '0.95rem',
-      fontWeight: '600',
-      color: '#1e293b',
-      margin: 0
-    },
-    userRole: {
-      fontSize: '0.875rem',
-      color: '#64748b',
-      margin: 0
-    },
-    logoutButton: {
-      backgroundColor: '#ef4444',
-      color: 'white',
-      padding: '0.625rem 1.5rem',
-      border: 'none',
-      borderRadius: '0.375rem',
-      fontSize: '0.95rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      transition: 'background-color 0.2s',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem'
-    },
-    logoutButtonDisabled: {
-      backgroundColor: '#9ca3af',
-      color: 'white',
-      padding: '0.625rem 1.5rem',
-      border: 'none',
-      borderRadius: '0.375rem',
-      fontSize: '0.95rem',
-      fontWeight: '600',
-      cursor: 'not-allowed',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem'
     },
     mainContent: {
       padding: '2rem',
@@ -760,60 +687,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   return (
     <div style={styles.container}>
-      {/* Header */}
-      <header style={styles.header}>
-        <div 
-          style={styles.logoContainer}
-          onClick={() => navigate('/dashboard')}
-        >
-          <img 
-            src="/Dentalflow-Manager.png" 
-            alt="DentalFlow Logo" 
-            style={styles.logoImage}
-          />
-        </div>
-        
-        <div style={styles.userSection}>
-          <div style={styles.userInfo}>
-            <p style={styles.userName}>{user?.nombre}</p>
-            <p style={styles.userRole}>
-              {user?.laboratorio || 'Laboratorio'} • {user?.rol === 'admin' ? 'Administrador' : 'Usuario'}
-            </p>
-          </div>
-          
-          <button 
-            style={cerrandoSesion ? styles.logoutButtonDisabled : styles.logoutButton}
-            onClick={handleLogout}
-            disabled={cerrandoSesion}
-            onMouseEnter={(e) => {
-              if (!cerrandoSesion) {
-                e.currentTarget.style.backgroundColor = '#dc2626';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!cerrandoSesion) {
-                e.currentTarget.style.backgroundColor = '#ef4444';
-              }
-            }}
-          >
-            {cerrandoSesion ? (
-              <>
-                <span>⌛</span>
-                Cerrando...
-              </>
-            ) : (
-              'Cerrar Sesión'
-            )}
-          </button>
-        </div>
-      </header>
+      {/* Header Reutilizable */}
+      <Header 
+        user={user}
+        onLogout={handleLogout}
+        cerrandoSesion={cerrandoSesion}
+        title="Dashboard - DentalFlow Manager"
+      />
 
       {/* Main Content */}
       <main style={styles.mainContent}>
         {/* Welcome Section */}
         <section style={styles.welcomeSection}>
           <h1 style={styles.welcomeTitle}>
-            Dashboard - DentalFlow Manager
+            ¡Bienvenido de nuevo, {user?.nombre}!
             {user?.rol === 'admin' && (
               <span style={styles.adminBadge}>ADMINISTRADOR</span>
             )}
@@ -821,7 +708,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           <p style={styles.welcomeSubtitle}>
             {user?.rol === 'admin' 
               ? 'Sistema de gestión completo - Modo Administrador' 
-              : `Bienvenido, ${user?.nombre} - ${user?.laboratorio || 'tu laboratorio'}`
+              : `Gestión completa de tu laboratorio dental ${user?.laboratorio ? `- ${user?.laboratorio}` : ''}`
             }
           </p>
 

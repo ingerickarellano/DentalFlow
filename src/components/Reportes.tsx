@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import Header from './Header'; // Importar el Header
 
 interface ReportesProps {
   onBack: () => void;
@@ -63,6 +64,18 @@ interface ConfiguracionLaboratorio {
   updated_at?: string;
 }
 
+interface User {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: string;
+  plan?: string;
+  fecha_expiracion?: string | null;
+  suscripcion_activa?: boolean;
+  laboratorio?: string;
+  telefono?: string;
+}
+
 // Definir tipo para los estilos
 type Styles = {
   [key: string]: React.CSSProperties;
@@ -83,6 +96,8 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
   const [configuracionLaboratorio, setConfiguracionLaboratorio] = useState<ConfiguracionLaboratorio | null>(null);
   const [cargando, setCargando] = useState(false);
   const [actualizandoEstado, setActualizandoEstado] = useState<string | null>(null);
+  const [usuario, setUsuario] = useState<User | null>(null);
+  const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
   // Cargar datos desde Supabase
   useEffect(() => {
@@ -96,6 +111,27 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       if (!user) {
         alert('No hay usuario autenticado');
         return;
+      }
+
+      // Cargar información del usuario desde la tabla perfiles
+      const { data: userData } = await supabase
+        .from('perfiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (userData) {
+        setUsuario({
+          id: userData.id,
+          email: userData.email || user.email || '',
+          nombre: userData.nombre || 'Usuario',
+          rol: userData.rol || 'usuario',
+          plan: userData.plan,
+          fecha_expiracion: userData.fecha_expiracion,
+          suscripcion_activa: userData.suscripcion_activa,
+          laboratorio: userData.laboratorio,
+          telefono: userData.telefono
+        });
       }
 
       // Cargar todos los datos en paralelo
@@ -144,6 +180,19 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       alert(`Error al cargar los datos: ${error.message}`);
     } finally {
       setCargando(false);
+    }
+  };
+
+  // Función para manejar logout
+  const handleLogout = async () => {
+    try {
+      setCerrandoSesion(true);
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+    } finally {
+      setCerrandoSesion(false);
     }
   };
 
@@ -783,7 +832,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     container: {
       padding: '20px',
       backgroundColor: '#f8fafc',
-      minHeight: '100vh',
+      minHeight: 'calc(100vh - 64px)', // Ajustado para el Header
       maxWidth: '1400px',
       margin: '0 auto'
     },
@@ -1024,9 +1073,20 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
 
   if (cargando) {
     return (
-      <div style={styles.container}>
-        <div style={styles.loadingText}>Cargando datos...</div>
-      </div>
+      <>
+        <Header 
+          user={usuario || undefined}
+          onLogout={handleLogout}
+          cerrandoSesion={cerrandoSesion}
+          showBackButton={true}
+          onBack={onBack}
+          title="Reportes de Prestaciones"
+          showTitle={true}
+        />
+        <div style={styles.container}>
+          <div style={styles.loadingText}>Cargando datos...</div>
+        </div>
+      </>
     );
   }
 
@@ -1035,67 +1095,89 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     : null;
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div>
-          <button style={styles.backButton} onClick={onBack}>
-            ← Volver al Dashboard
-          </button>
+    <>
+      <Header 
+        user={usuario || undefined}
+        onLogout={handleLogout}
+        cerrandoSesion={cerrandoSesion}
+        showBackButton={true}
+        onBack={onBack}
+        title="Reportes de Prestaciones"
+        showTitle={true}
+      />
+      <div style={styles.container}>
+        <div style={styles.header}>
           <h1 style={styles.title}>📊 Reportes de Prestaciones</h1>
         </div>
-      </div>
 
-      {/* Filtros */}
-      <div style={styles.filtrosContainer}>
-        <h3 style={{ marginBottom: '1.5rem', color: '#1e293b', fontSize: '1.125rem' }}>Configurar Reporte</h3>
-        
-        <div style={styles.grid}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Clínica</label>
-            <select 
-              style={styles.select}
-              name="clinicaId"
-              value={filtros.clinicaId}
-              onChange={handleInputChange}
-            >
-              <option value="todos">Todas las Clínicas</option>
-              {clinicas.map(clinica => (
-                <option key={clinica.id} value={clinica.id}>{clinica.nombre}</option>
-              ))}
-            </select>
-          </div>
+        {/* Filtros */}
+        <div style={styles.filtrosContainer}>
+          <h3 style={{ marginBottom: '1.5rem', color: '#1e293b', fontSize: '1.125rem' }}>Configurar Reporte</h3>
+          
+          <div style={styles.grid}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Clínica</label>
+              <select 
+                style={styles.select}
+                name="clinicaId"
+                value={filtros.clinicaId}
+                onChange={handleInputChange}
+              >
+                <option value="todos">Todas las Clínicas</option>
+                {clinicas.map(clinica => (
+                  <option key={clinica.id} value={clinica.id}>{clinica.nombre}</option>
+                ))}
+              </select>
+            </div>
 
-          <div style={styles.formGroup}>
-            <label style={styles.label}>Período</label>
-            <select 
-              style={styles.select}
-              name="periodo"
-              value={filtros.periodo}
-              onChange={handleInputChange}
-            >
-              <option value="mes">Mes</option>
-              <option value="año">Año</option>
-              <option value="personalizado">Personalizado</option>
-            </select>
-          </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Período</label>
+              <select 
+                style={styles.select}
+                name="periodo"
+                value={filtros.periodo}
+                onChange={handleInputChange}
+              >
+                <option value="mes">Mes</option>
+                <option value="año">Año</option>
+                <option value="personalizado">Personalizado</option>
+              </select>
+            </div>
 
-          {filtros.periodo === 'mes' && (
-            <>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Mes</label>
-                <select 
-                  style={styles.select}
-                  name="mes"
-                  value={filtros.mes}
-                  onChange={handleInputChange}
-                >
-                  {meses.map(mes => (
-                    <option key={mes.valor} value={mes.valor}>
-                      {mes.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {filtros.periodo === 'mes' && (
+              <>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Mes</label>
+                  <select 
+                    style={styles.select}
+                    name="mes"
+                    value={filtros.mes}
+                    onChange={handleInputChange}
+                  >
+                    {meses.map(mes => (
+                      <option key={mes.valor} value={mes.valor}>
+                        {mes.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Año</label>
+                  <select 
+                    style={styles.select}
+                    name="año"
+                    value={filtros.año}
+                    onChange={handleInputChange}
+                  >
+                    {años.map(año => (
+                      <option key={año} value={año}>{año}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {filtros.periodo === 'año' && (
               <div style={styles.formGroup}>
                 <label style={styles.label}>Año</label>
                 <select 
@@ -1109,208 +1191,192 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                   ))}
                 </select>
               </div>
-            </>
-          )}
+            )}
+          </div>
 
-          {filtros.periodo === 'año' && (
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Año</label>
-              <select 
-                style={styles.select}
-                name="año"
-                value={filtros.año}
-                onChange={handleInputChange}
-              >
-                {años.map(año => (
-                  <option key={año} value={año}>{año}</option>
-                ))}
-              </select>
+          {filtros.periodo === 'personalizado' && (
+            <div style={styles.grid}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Fecha Inicio</label>
+                <input
+                  type="date"
+                  style={styles.select}
+                  name="fechaInicio"
+                  value={filtros.fechaInicio}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Fecha Fin</label>
+                <input
+                  type="date"
+                  style={styles.select}
+                  name="fechaFin"
+                  value={filtros.fechaFin}
+                  onChange={handleInputChange}
+                />
+              </div>
             </div>
           )}
+
+          <div style={styles.exportButtons}>
+            <button style={styles.buttonWarning} onClick={exportarExcel}>
+              📈 Exportar a Excel
+            </button>
+            <button style={styles.buttonSuccess} onClick={exportarPDF}>
+              📄 Exportar a PDF
+            </button>
+          </div>
         </div>
 
-        {filtros.periodo === 'personalizado' && (
-          <div style={styles.grid}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Fecha Inicio</label>
-              <input
-                type="date"
-                style={styles.select}
-                name="fechaInicio"
-                value={filtros.fechaInicio}
-                onChange={handleInputChange}
-              />
+        {/* Resultados */}
+        {trabajosFiltrados.length > 0 ? (
+          <div style={styles.resultadosContainer}>
+            {/* Encabezado del Reporte */}
+            <div style={styles.reporteHeader}>
+              <h2 style={{ margin: '0 0 0.5rem 0', color: '#0369a1' }}>
+                PRESTACIONES DE {clinicaSeleccionada ? `LA CLÍNICA ${clinicaSeleccionada.nombre.toUpperCase()}` : 'TODAS LAS CLÍNICAS'}
+              </h2>
+              <p style={{ margin: '0.25rem 0', color: '#64748b' }}>
+                Período: {filtros.periodo === 'mes' ? `${obtenerNombreMes(filtros.mes)} ${filtros.año}` : `${filtros.fechaInicio} a ${filtros.fechaFin}`}
+              </p>
+              <p style={{ margin: '0.25rem 0', color: '#64748b' }}>
+                Generado: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+              </p>
+              <p style={{ margin: '0.25rem 0', color: '#64748b', fontWeight: 'bold' }}>
+                Total Trabajos: {estadisticas.totalTrabajos} | Total Prestaciones: {estadisticas.totalPrestaciones}
+              </p>
             </div>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Fecha Fin</label>
-              <input
-                type="date"
-                style={styles.select}
-                name="fechaFin"
-                value={filtros.fechaFin}
-                onChange={handleInputChange}
-              />
+
+            <h3 style={styles.sectionTitle}>Detalles de Trabajos</h3>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={styles.tabla}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Paciente</th>
+                    <th style={styles.th}>Clínica</th>
+                    <th style={{...styles.th, width: '30%'}}>Prestaciones</th>
+                    <th style={styles.th}>Estado</th>
+                    <th style={styles.th}>Precio Bruto</th>
+                    <th style={styles.th}>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} ({configuracionLaboratorio?.porcentaje_impuesto}%)</th>
+                    <th style={styles.th}>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'Total con IVA' : 'Total Neto'}</th>
+                    <th style={styles.th}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trabajosFiltrados.map((trabajo, index) => {
+                    const clinica = clinicas.find(c => c.id === trabajo.clinica_id);
+                    const montos = calcularMontosConImpuesto(trabajo.precio_total);
+                    
+                    return (
+                      <tr key={trabajo.id} style={getRowStyle(index)}>
+                        <td style={styles.td}>{trabajo.paciente}</td>
+                        <td style={styles.td}>{clinica?.nombre || 'N/A'}</td>
+                        <td style={styles.td}>
+                          <div style={styles.serviciosContainer}>
+                            {trabajo.servicios.map((servicio, idx) => (
+                              <div key={idx} style={idx === trabajo.servicios.length - 1 ? {...styles.servicioItem, ...styles.servicioItemLast} : styles.servicioItem}>
+                                <div style={styles.servicioNombre}>
+                                  {servicio.nombre || 'Servicio'}
+                                </div>
+                                <div style={styles.servicioDetalles}>
+                                  <span>x{servicio.cantidad} {servicio.pieza_dental && `| Pieza: ${servicio.pieza_dental}`}</span>
+                                  <span>${servicio.precio.toLocaleString()}</span>
+                                </div>
+                                {servicio.nota_especial && (
+                                  <div style={styles.notaEspecial}>
+                                    📝 {servicio.nota_especial}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                        <td style={styles.td}>
+                          <span style={obtenerEstiloEstado(trabajo.estado)}>
+                            {obtenerTextoEstado(trabajo.estado)}
+                          </span>
+                        </td>
+                        <td style={styles.td}>${trabajo.precio_total.toLocaleString()}</td>
+                        <td style={styles.td}>${montos.impuesto.toLocaleString()}</td>
+                        <td style={{...styles.td, color: '#10b981', fontWeight: 'bold'}}>
+                          ${montos.neto.toLocaleString()}
+                        </td>
+                        <td style={styles.td}>
+                          <div style={styles.acciones}>
+                            {trabajo.estado === 'pendiente' && (
+                              <button
+                                style={{...styles.actionButton, backgroundColor: '#10b981', color: 'white'}}
+                                onClick={() => actualizarEstadoTrabajo(trabajo.id, 'produccion')}
+                                disabled={actualizandoEstado === trabajo.id}
+                              >
+                                {actualizandoEstado === trabajo.id ? '...' : '▶️'}
+                              </button>
+                            )}
+                            {trabajo.estado === 'produccion' && (
+                              <button
+                                style={{...styles.actionButton, backgroundColor: '#f59e0b', color: 'white'}}
+                                onClick={() => actualizarEstadoTrabajo(trabajo.id, 'terminado')}
+                                disabled={actualizandoEstado === trabajo.id}
+                              >
+                                {actualizandoEstado === trabajo.id ? '...' : '✅'}
+                              </button>
+                            )}
+                            {trabajo.estado === 'terminado' && (
+                              <button
+                                style={{...styles.actionButton, backgroundColor: '#3b82f6', color: 'white'}}
+                                onClick={() => actualizarEstadoTrabajo(trabajo.id, 'entregado')}
+                                disabled={actualizandoEstado === trabajo.id}
+                              >
+                                {actualizandoEstado === trabajo.id ? '...' : '📦'}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Totales */}
+            <div style={styles.totalesContainer}>
+              <h3 style={styles.sectionTitle}>Resumen General</h3>
+              <div style={styles.totalRow}>
+                <span>Total de Trabajos:</span>
+                <span>{estadisticas.totalTrabajos}</span>
+              </div>
+              <div style={styles.totalRow}>
+                <span>Total de Prestaciones:</span>
+                <span>{estadisticas.totalPrestaciones}</span>
+              </div>
+              <div style={styles.totalRow}>
+                <span>Total Bruto:</span>
+                <span>${estadisticas.totalIngresos.toLocaleString()}</span>
+              </div>
+              <div style={styles.totalRow}>
+                <span>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} ({configuracionLaboratorio?.porcentaje_impuesto}%):</span>
+                <span>${estadisticas.impuesto.toLocaleString()}</span>
+              </div>
+              <div style={{...styles.totalRow, ...styles.totalFinal}}>
+                <span>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'TOTAL CON IVA:' : 'TOTAL NETO A PAGAR:'}</span>
+                <span style={{color: '#10b981'}}>${estadisticas.neto.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={styles.resultadosContainer}>
+            <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📊</div>
+              <h3 style={{ marginBottom: '0.5rem' }}>No hay trabajos para mostrar</h3>
+              <p>No se encontraron trabajos con los filtros seleccionados.</p>
             </div>
           </div>
         )}
-
-        <div style={styles.exportButtons}>
-          <button style={styles.buttonWarning} onClick={exportarExcel}>
-            📈 Exportar a Excel
-          </button>
-          <button style={styles.buttonSuccess} onClick={exportarPDF}>
-            📄 Exportar a PDF
-          </button>
-        </div>
       </div>
-
-      {/* Resultados */}
-      {trabajosFiltrados.length > 0 ? (
-        <div style={styles.resultadosContainer}>
-          {/* Encabezado del Reporte */}
-          <div style={styles.reporteHeader}>
-            <h2 style={{ margin: '0 0 0.5rem 0', color: '#0369a1' }}>
-              PRESTACIONES DE {clinicaSeleccionada ? `LA CLÍNICA ${clinicaSeleccionada.nombre.toUpperCase()}` : 'TODAS LAS CLÍNICAS'}
-            </h2>
-            <p style={{ margin: '0.25rem 0', color: '#64748b' }}>
-              Período: {filtros.periodo === 'mes' ? `${obtenerNombreMes(filtros.mes)} ${filtros.año}` : `${filtros.fechaInicio} a ${filtros.fechaFin}`}
-            </p>
-            <p style={{ margin: '0.25rem 0', color: '#64748b' }}>
-              Generado: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
-            </p>
-            <p style={{ margin: '0.25rem 0', color: '#64748b', fontWeight: 'bold' }}>
-              Total Trabajos: {estadisticas.totalTrabajos} | Total Prestaciones: {estadisticas.totalPrestaciones}
-            </p>
-          </div>
-
-          <h3 style={styles.sectionTitle}>Detalles de Trabajos</h3>
-
-          <div style={{ overflowX: 'auto' }}>
-            <table style={styles.tabla}>
-              <thead>
-                <tr>
-                  <th style={styles.th}>Paciente</th>
-                  <th style={styles.th}>Clínica</th>
-                  <th style={{...styles.th, width: '30%'}}>Prestaciones</th>
-                  <th style={styles.th}>Estado</th>
-                  <th style={styles.th}>Precio Bruto</th>
-                  <th style={styles.th}>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} ({configuracionLaboratorio?.porcentaje_impuesto}%)</th>
-                  <th style={styles.th}>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'Total con IVA' : 'Total Neto'}</th>
-                  <th style={styles.th}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trabajosFiltrados.map((trabajo, index) => {
-                  const clinica = clinicas.find(c => c.id === trabajo.clinica_id);
-                  const montos = calcularMontosConImpuesto(trabajo.precio_total);
-                  
-                  return (
-                    <tr key={trabajo.id} style={getRowStyle(index)}>
-                      <td style={styles.td}>{trabajo.paciente}</td>
-                      <td style={styles.td}>{clinica?.nombre || 'N/A'}</td>
-                      <td style={styles.td}>
-                        <div style={styles.serviciosContainer}>
-                          {trabajo.servicios.map((servicio, idx) => (
-                            <div key={idx} style={idx === trabajo.servicios.length - 1 ? {...styles.servicioItem, ...styles.servicioItemLast} : styles.servicioItem}>
-                              <div style={styles.servicioNombre}>
-                                {servicio.nombre || 'Servicio'}
-                              </div>
-                              <div style={styles.servicioDetalles}>
-                                <span>x{servicio.cantidad} {servicio.pieza_dental && `| Pieza: ${servicio.pieza_dental}`}</span>
-                                <span>${servicio.precio.toLocaleString()}</span>
-                              </div>
-                              {servicio.nota_especial && (
-                                <div style={styles.notaEspecial}>
-                                  📝 {servicio.nota_especial}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-                      <td style={styles.td}>
-                        <span style={obtenerEstiloEstado(trabajo.estado)}>
-                          {obtenerTextoEstado(trabajo.estado)}
-                        </span>
-                      </td>
-                      <td style={styles.td}>${trabajo.precio_total.toLocaleString()}</td>
-                      <td style={styles.td}>${montos.impuesto.toLocaleString()}</td>
-                      <td style={{...styles.td, color: '#10b981', fontWeight: 'bold'}}>
-                        ${montos.neto.toLocaleString()}
-                      </td>
-                      <td style={styles.td}>
-                        <div style={styles.acciones}>
-                          {trabajo.estado === 'pendiente' && (
-                            <button
-                              style={{...styles.actionButton, backgroundColor: '#10b981', color: 'white'}}
-                              onClick={() => actualizarEstadoTrabajo(trabajo.id, 'produccion')}
-                              disabled={actualizandoEstado === trabajo.id}
-                            >
-                              {actualizandoEstado === trabajo.id ? '...' : '▶️'}
-                            </button>
-                          )}
-                          {trabajo.estado === 'produccion' && (
-                            <button
-                              style={{...styles.actionButton, backgroundColor: '#f59e0b', color: 'white'}}
-                              onClick={() => actualizarEstadoTrabajo(trabajo.id, 'terminado')}
-                              disabled={actualizandoEstado === trabajo.id}
-                            >
-                              {actualizandoEstado === trabajo.id ? '...' : '✅'}
-                            </button>
-                          )}
-                          {trabajo.estado === 'terminado' && (
-                            <button
-                              style={{...styles.actionButton, backgroundColor: '#3b82f6', color: 'white'}}
-                              onClick={() => actualizarEstadoTrabajo(trabajo.id, 'entregado')}
-                              disabled={actualizandoEstado === trabajo.id}
-                            >
-                              {actualizandoEstado === trabajo.id ? '...' : '📦'}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Totales */}
-          <div style={styles.totalesContainer}>
-            <h3 style={styles.sectionTitle}>Resumen General</h3>
-            <div style={styles.totalRow}>
-              <span>Total de Trabajos:</span>
-              <span>{estadisticas.totalTrabajos}</span>
-            </div>
-            <div style={styles.totalRow}>
-              <span>Total de Prestaciones:</span>
-              <span>{estadisticas.totalPrestaciones}</span>
-            </div>
-            <div style={styles.totalRow}>
-              <span>Total Bruto:</span>
-              <span>${estadisticas.totalIngresos.toLocaleString()}</span>
-            </div>
-            <div style={styles.totalRow}>
-              <span>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} ({configuracionLaboratorio?.porcentaje_impuesto}%):</span>
-              <span>${estadisticas.impuesto.toLocaleString()}</span>
-            </div>
-            <div style={{...styles.totalRow, ...styles.totalFinal}}>
-              <span>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'TOTAL CON IVA:' : 'TOTAL NETO A PAGAR:'}</span>
-              <span style={{color: '#10b981'}}>${estadisticas.neto.toLocaleString()}</span>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div style={styles.resultadosContainer}>
-          <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📊</div>
-            <h3 style={{ marginBottom: '0.5rem' }}>No hay trabajos para mostrar</h3>
-            <p>No se encontraron trabajos con los filtros seleccionados.</p>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 };
 
