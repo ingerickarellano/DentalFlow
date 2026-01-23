@@ -384,7 +384,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       ventana.document.write(`
         <html>
           <head>
-            <title>Reporte DentalFlow - ${new Date().toLocaleDateString()}</title>
+           <title>Reporte ${clinicaSeleccionada ? clinicaSeleccionada.nombre : 'Todas las Clínicas'} - ${new Date().toLocaleDateString()}</title>
             <style>
               @page {
                 margin: 1cm;
@@ -718,7 +718,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
               </div>
 
               <div class="footer">
-                Documento generado automáticamente por DentalFlow - ${new Date().toLocaleDateString()}
+                Documento generado automáticamente - ${new Date().toLocaleDateString()}
               </div>
 
               <div class="no-print" style="margin-top: 25px; text-align: center; padding: 20px;">
