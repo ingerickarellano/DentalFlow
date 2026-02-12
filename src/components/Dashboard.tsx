@@ -207,21 +207,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   // ============================================
   // 3. LOGOUT
   // ============================================
-  const handleLogout = async () => {
-    if (cerrandoSesion) return;
-    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
-
-    try {
-      setCerrandoSesion(true);
-      await onLogout();
-      navigate('/', { replace: true });
-    } catch (error) {
-      console.error('Error al cerrar sesión:', error);
-      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
-    } finally {
-      setCerrandoSesion(false);
-    }
-  };
+const handleLogout = async () => {
+  if (cerrandoSesion) return;
+  if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
+  try {
+    setCerrandoSesion(true);
+    await onLogout();
+  } catch (error) {
+    console.error('Error al cerrar sesión:', error);
+    alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+  } finally {
+    setCerrandoSesion(false);
+  }
+};
 
   // ============================================
   // 4. UTILIDADES

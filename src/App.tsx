@@ -80,7 +80,7 @@ const App: React.FC = () => {
   }, [navigate]);
 
   // ============================================
-  // 2. LISTENER DE AUTENTICACIÓN
+  // 2. LISTENER DE AUTENTICACIÓN (CORREGIDO)
   // ============================================
   useEffect(() => {
     if (authListenerSet || loading) return;
@@ -113,18 +113,12 @@ const App: React.FC = () => {
           }
         }
 
+        // ✅ CORREGIDO: SOLO redirigir al Landing Page con recarga completa
         if (event === 'SIGNED_OUT') {
+          console.log('🔒 Logout detectado - Redirigiendo al Landing Page con recarga completa');
           setCurrentUser(null);
-          const currentPath = window.location.pathname;
-          const protectedRoutes = [
-            '/dashboard', '/crear-trabajo', '/clinicas', '/dentistas',
-            '/laboratoristas', '/servicios', '/trabajos', '/precios',
-            '/configuracion', '/reportes', '/admin', '/opciones-cuenta',
-            '/mi-membresia', '/control-pagos', '/entregas'
-          ];
-          if (protectedRoutes.includes(currentPath)) {
-            navigate('/login', { replace: true });
-          }
+          window.location.href = '/';
+          return;
         }
       }
     );
@@ -191,17 +185,14 @@ const App: React.FC = () => {
       return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Cargando...</div>;
     }
 
-    // No autenticado
     if (!usuario) {
       return <Navigate to="/login" replace />;
     }
 
-    // Rol no permitido
     if (!allowedRoles.includes(rol || '')) {
       return <Navigate to="/dashboard" replace />;
     }
 
-    // ✅ Acceso permitido (el Dashboard maneja internamente la membresía)
     return <>{children}</>;
   };
 
@@ -245,7 +236,7 @@ const App: React.FC = () => {
         }
       />
 
-      {/* Mi Membresía - accesible para clientes autenticados */}
+      {/* Mi Membresía */}
       <Route
         path="/mi-membresia"
         element={
@@ -255,7 +246,7 @@ const App: React.FC = () => {
         }
       />
 
-      {/* Módulos protegidos (sin validación de membresía, el dashboard bloquea internamente) */}
+      {/* Módulos protegidos */}
       <Route path="/crear-trabajo" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><CrearTrabajo onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/clinicas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionClinicas /></ProtectedRoute>} />
       <Route path="/dentistas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionDentistas /></ProtectedRoute>} />

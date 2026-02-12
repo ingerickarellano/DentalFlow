@@ -33,17 +33,27 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   const navigate = useNavigate();
 
+  // ============================================
+  // HANDLE LOGOUT MEJORADO CON FALLBACK
+  // ============================================
   const handleLogout = async () => {
-    if (cerrandoSesion) return; // Evita múltiples clics
-    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) {
-      return;
-    }
+    if (cerrandoSesion) return;
+    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
 
     try {
+      // Indicar que estamos cerrando sesión
       if (onLogout) {
         await onLogout();
       }
-      navigate('/');
+
+      // ✅ FALLBACK: Si después de 1 segundo la redirección no ocurrió, forzamos ir al Landing
+      setTimeout(() => {
+        if (window.location.pathname !== '/') {
+          console.log('⚠️ Header fallback: redirigiendo manualmente al Landing Page');
+          window.location.href = '/';
+        }
+      }, 1000);
+
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
       alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
