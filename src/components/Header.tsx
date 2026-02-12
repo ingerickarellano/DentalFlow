@@ -22,11 +22,11 @@ interface HeaderProps {
   showTitle?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ 
-  user, 
-  onLogout, 
-  cerrandoSesion = false, 
-  showBackButton = false, 
+const Header: React.FC<HeaderProps> = ({
+  user,
+  onLogout,
+  cerrandoSesion = false,
+  showBackButton = false,
   onBack,
   title = '',
   showTitle = false
@@ -34,6 +34,7 @@ const Header: React.FC<HeaderProps> = ({
   const navigate = useNavigate();
 
   const handleLogout = async () => {
+    if (cerrandoSesion) return; // Evita múltiples clics
     if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) {
       return;
     }
@@ -206,7 +207,7 @@ const Header: React.FC<HeaderProps> = ({
     <header style={styles.header}>
       <div style={styles.leftSection}>
         {showBackButton && onBack && (
-          <button 
+          <button
             style={styles.backButton}
             onClick={onBack}
             onMouseEnter={(e) => {
@@ -222,8 +223,8 @@ const Header: React.FC<HeaderProps> = ({
             ←
           </button>
         )}
-        
-        <div 
+
+        <div
           style={styles.logoContainer}
           onClick={() => navigate('/dashboard')}
           onMouseEnter={(e) => {
@@ -239,9 +240,9 @@ const Header: React.FC<HeaderProps> = ({
             }
           }}
         >
-          <img 
-            src="/Dentalflow-Manager.png" 
-            alt="DentalFlow Logo" 
+          <img
+            src="/Dentalflow-Manager.png"
+            alt="DentalFlow Logo"
             style={styles.logoImage}
           />
         </div>
@@ -250,7 +251,7 @@ const Header: React.FC<HeaderProps> = ({
           <h1 style={styles.pageTitle}>{title}</h1>
         )}
       </div>
-      
+
       <div style={styles.userSection}>
         {user && (
           <div style={styles.userInfo}>
@@ -271,9 +272,9 @@ const Header: React.FC<HeaderProps> = ({
             {getInitials(user.nombre)}
           </div>
         )}
-        
+
         {onLogout && (
-          <button 
+          <button
             style={cerrandoSesion ? styles.logoutButtonDisabled : styles.logoutButton}
             onClick={handleLogout}
             disabled={cerrandoSesion}

@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string>('');
 
   const styles = {
     container: {
@@ -67,7 +69,7 @@ const LandingPage: React.FC = () => {
     hero: {
       textAlign: 'center' as const,
       padding: '5rem 2rem',
-      maxWidth: '800px',
+      maxWidth: '900px',
       margin: '0 auto'
     },
     heroTitle: {
@@ -82,7 +84,7 @@ const LandingPage: React.FC = () => {
       marginBottom: '2.5rem',
       color: '#64748b',
       lineHeight: '1.6',
-      maxWidth: '600px',
+      maxWidth: '700px',
       margin: '0 auto'
     },
     buttonGroup: {
@@ -121,7 +123,7 @@ const LandingPage: React.FC = () => {
       textAlign: 'center' as const,
       fontSize: '2.5rem',
       fontWeight: '700',
-      marginBottom: '3rem',
+      marginBottom: '1rem',
       color: '#1e293b'
     },
     sectionSubtitle: {
@@ -129,8 +131,8 @@ const LandingPage: React.FC = () => {
       fontSize: '1.125rem',
       color: '#64748b',
       marginBottom: '3rem',
-      maxWidth: '600px',
-      margin: '0 auto',
+      maxWidth: '700px',
+      margin: '0 auto 3rem',
       lineHeight: '1.6'
     },
     featuresGrid: {
@@ -146,7 +148,7 @@ const LandingPage: React.FC = () => {
       borderRadius: '0.75rem',
       boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
       border: '1px solid #e2e8f0',
-      transition: 'transform 0.2s, box-shadow 0.2s',
+      transition: 'transform 0.2s, boxShadow 0.2s',
       textAlign: 'center' as const
     },
     featureIcon: {
@@ -199,7 +201,7 @@ const LandingPage: React.FC = () => {
       fontSize: '3rem',
       fontWeight: '700',
       color: '#3b82f6',
-      marginBottom: '0.5rem'
+      marginBottom: '0.25rem'
     },
     planPeriod: {
       color: '#64748b',
@@ -287,6 +289,101 @@ const LandingPage: React.FC = () => {
       color: '#64748b',
       fontSize: '0.95rem',
       fontWeight: '500'
+    },
+    // Nuevos estilos para secciones estratégicas
+    priceHighlight: {
+      backgroundColor: '#f0f9ff',
+      padding: '0.5rem 1rem',
+      borderRadius: '2rem',
+      color: '#0369a1',
+      fontSize: '0.9rem',
+      fontWeight: '600',
+      display: 'inline-block',
+      marginBottom: '1rem'
+    },
+    comparisonTable: {
+      maxWidth: '900px',
+      margin: '3rem auto',
+      backgroundColor: 'white',
+      borderRadius: '1rem',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+      border: '1px solid #e2e8f0',
+      overflow: 'hidden'
+    },
+    comparisonRow: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr 1fr',
+      borderBottom: '1px solid #e2e8f0',
+      padding: '1rem'
+    },
+    comparisonHeader: {
+      backgroundColor: '#f8fafc',
+      fontWeight: '700',
+      color: '#1e293b'
+    },
+    comparisonCell: {
+      padding: '0.75rem',
+      textAlign: 'center' as const
+    },
+    checkIcon: {
+      color: '#10b981',
+      fontSize: '1.25rem'
+    },
+    crossIcon: {
+      color: '#ef4444',
+      fontSize: '1.25rem'
+    },
+    testimonialGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+      gap: '2rem',
+      maxWidth: '1200px',
+      margin: '3rem auto 0'
+    },
+    testimonialCard: {
+      backgroundColor: 'white',
+      padding: '2rem',
+      borderRadius: '0.75rem',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+      border: '1px solid #e2e8f0'
+    },
+    testimonialQuote: {
+      fontSize: '1rem',
+      color: '#334155',
+      lineHeight: '1.6',
+      marginBottom: '1.5rem',
+      fontStyle: 'italic'
+    },
+    testimonialAuthor: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1rem'
+    },
+    testimonialAvatar: {
+      width: '48px',
+      height: '48px',
+      borderRadius: '50%',
+      backgroundColor: '#e2e8f0',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '1.25rem',
+      fontWeight: '600',
+      color: '#475569'
+    },
+    testimonialInfo: {
+      textAlign: 'left' as const
+    },
+    testimonialName: {
+      fontSize: '1rem',
+      fontWeight: '600',
+      color: '#1e293b',
+      margin: '0 0 0.25rem'
+    },
+    testimonialRole: {
+      fontSize: '0.875rem',
+      color: '#64748b',
+      margin: 0
     }
   };
 
@@ -323,6 +420,7 @@ const LandingPage: React.FC = () => {
     }
   ];
 
+  // NUEVOS PLANES CON PRECIOS EN PESOS CHILENOS
   const plans = [
     {
       id: 'gratuita',
@@ -343,7 +441,7 @@ const LandingPage: React.FC = () => {
     {
       id: 'profesional',
       name: 'Plan Profesional',
-      price: 49,
+      price: 8000,
       period: 'por mes',
       features: [
         'Clínicas ilimitadas',
@@ -355,13 +453,14 @@ const LandingPage: React.FC = () => {
         'API de integración'
       ],
       popular: true,
-      buttonText: 'Elegir Profesional',
-      buttonColor: '#3b82f6'
+      buttonText: 'Solicitar Transferencia',
+      buttonColor: '#3b82f6',
+      transferInfo: true
     },
     {
       id: 'empresarial',
       name: 'Plan Empresarial',
-      price: 99,
+      price: 16000,
       period: 'por mes',
       features: [
         'Todo del plan Profesional',
@@ -373,8 +472,9 @@ const LandingPage: React.FC = () => {
         'Facturación automática'
       ],
       popular: false,
-      buttonText: 'Contactar Ventas',
-      buttonColor: '#8b5cf6'
+      buttonText: 'Contactar para Transferencia',
+      buttonColor: '#8b5cf6',
+      transferInfo: true
     }
   ];
 
@@ -385,6 +485,28 @@ const LandingPage: React.FC = () => {
     { number: '24/7', label: 'Soporte Activo' }
   ];
 
+  // NUEVA SECCIÓN: Testimonios
+  const testimonials = [
+    {
+      quote: 'Pasamos de planillas Excel a DentalFlow y nuestra productividad aumentó un 40%. Lo mejor: pagamos menos de lo que gastábamos en café.',
+      name: 'Carlos Muñoz',
+      role: 'Director, Laboratorio Dental Muñoz',
+      initials: 'CM'
+    },
+    {
+      quote: 'Buscábamos un software accesible, no soluciones de USD 100 mensuales. DentalFlow nos dio todo lo que necesitamos a un precio justo.',
+      name: 'María José Fernández',
+      role: 'Administradora, Tecnodent',
+      initials: 'MJ'
+    },
+    {
+      quote: 'La atención personalizada y el soporte rápido marcan la diferencia. Y por $8.000, ni lo pienses.',
+      name: 'Rodrigo Soto',
+      role: 'Dueño, Soto Dental Lab',
+      initials: 'RS'
+    }
+  ];
+
   const handleDemoRequest = () => {
     if (email) {
       alert(`¡Gracias! Te contactaremos pronto al email: ${email} para coordinar tu demo.`);
@@ -392,6 +514,11 @@ const LandingPage: React.FC = () => {
     } else {
       alert('Por favor ingresa tu email para solicitar el demo.');
     }
+  };
+
+  const handleTransferRequest = (planId: string) => {
+    setSelectedPlan(planId);
+    setShowTransferModal(true);
   };
 
   return (
@@ -435,15 +562,17 @@ const LandingPage: React.FC = () => {
         </nav>
       </header>
 
-      {/* Hero Section */}
+      {/* Hero Section - NUEVO: Énfasis en precio bajo */}
       <section style={styles.hero}>
+        <span style={styles.priceHighlight}>🚀 Precios pensados para Latinoamérica</span>
         <h1 style={styles.heroTitle}>
-          La Plataforma Todo-en-Uno para<br />
-          <span style={{ color: '#3b82f6' }}>Laboratorios Dentales</span>
+          Gestión profesional para<br />
+          <span style={{ color: '#3b82f6' }}>laboratorios dentales</span><br />
+          desde <span style={{ color: '#3b82f6', fontSize: '4rem' }}>$8.000</span>/mes
         </h1>
         <p style={styles.heroSubtitle}>
           Optimiza tu workflow, aumenta tu productividad y haz crecer tu laboratorio 
-          con la solución más completa del mercado.
+          con la solución más accesible del mercado. Sin contratos largos, cancela cuando quieras.
         </p>
         <div style={styles.buttonGroup}>
           <button 
@@ -471,7 +600,7 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Stats Section */}
+      {/* Stats Section (sin cambios) */}
       <section style={{ padding: '3rem 2rem', backgroundColor: 'white' }}>
         <div style={styles.stats}>
           {stats.map((stat, index) => (
@@ -483,7 +612,7 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Features Section */}
+      {/* Features Section (sin cambios) */}
       <section style={{ ...styles.section, backgroundColor: 'white' }} id="features">
         <h2 style={styles.sectionTitle}>Todo lo que Necesitas en un Solo Lugar</h2>
         <p style={styles.sectionSubtitle}>
@@ -512,8 +641,52 @@ const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section style={{ ...styles.section, backgroundColor: '#f8fafc' }} id="pricing">
+      {/* NUEVA SECCIÓN: Comparativa de precios */}
+      <section style={{ ...styles.section, backgroundColor: '#f8fafc' }}>
+        <h2 style={styles.sectionTitle}>Menos del 20% de lo que cobra la competencia</h2>
+        <p style={styles.sectionSubtitle}>
+          Mientras otros SaaS cobran en dólares precios imposibles, nosotros desarrollamos 
+          tecnología de primer nivel a precios locales. Compruébalo tú mismo.
+        </p>
+        <div style={styles.comparisonTable}>
+          <div style={{ ...styles.comparisonRow, ...styles.comparisonHeader }}>
+            <div style={styles.comparisonCell}>Característica</div>
+            <div style={styles.comparisonCell}>Competencia Internacional</div>
+            <div style={styles.comparisonCell}>DentalFlow</div>
+          </div>
+          <div style={styles.comparisonRow}>
+            <div style={styles.comparisonCell}>Precio mensual</div>
+            <div style={styles.comparisonCell}>USD $49 – $99</div>
+            <div style={styles.comparisonCell}><strong style={{ color: '#3b82f6' }}>$8.000 – $16.000 CLP</strong></div>
+          </div>
+          <div style={styles.comparisonRow}>
+            <div style={styles.comparisonCell}>Soporte en español</div>
+            <div style={styles.comparisonCell}><span style={styles.crossIcon}>✗</span> Limitado</div>
+            <div style={styles.comparisonCell}><span style={styles.checkIcon}>✓</span> 100% local</div>
+          </div>
+          <div style={styles.comparisonRow}>
+            <div style={styles.comparisonCell}>Facturación chilena</div>
+            <div style={styles.comparisonCell}><span style={styles.crossIcon}>✗</span> No</div>
+            <div style={styles.comparisonCell}><span style={styles.checkIcon}>✓</span> Sí (Boleta/Factura)</div>
+          </div>
+          <div style={styles.comparisonRow}>
+            <div style={styles.comparisonCell}>Transferencia bancaria</div>
+            <div style={styles.comparisonCell}><span style={styles.crossIcon}>✗</span> Solo tarjeta</div>
+            <div style={styles.comparisonCell}><span style={styles.checkIcon}>✓</span> Transferencia Sencilla</div>
+          </div>
+          <div style={styles.comparisonRow}>
+            <div style={styles.comparisonCell}>Contrato anual</div>
+            <div style={styles.comparisonCell}>Obligatorio</div>
+            <div style={styles.comparisonCell}><span style={styles.checkIcon}>✓</span> Mensual, sin ataduras</div>
+          </div>
+        </div>
+        <p style={{ textAlign: 'center', color: '#475569', marginTop: '1rem' }}>
+          🎯 ¿Por qué tan barato? Porque creemos en la democratización del software dental.
+        </p>
+      </section>
+
+      {/* Pricing Section - CON PRECIOS ACTUALIZADOS */}
+      <section style={{ ...styles.section, backgroundColor: '#ffffff' }} id="pricing">
         <h2 style={styles.sectionTitle}>Planes que Crecen Contigo</h2>
         <p style={styles.sectionSubtitle}>
           Elige el plan perfecto para tu laboratorio. Sin contratos largos, cancela cuando quieras.
@@ -543,7 +716,7 @@ const LandingPage: React.FC = () => {
               
               <h3 style={styles.planName}>{plan.name}</h3>
               <div style={styles.planPrice}>
-                {plan.price === 0 ? 'Gratis' : `$${plan.price}`}
+                {plan.price === 0 ? 'Gratis' : `$${plan.price.toLocaleString('es-CL')}`}
               </div>
               <div style={styles.planPeriod}>{plan.period}</div>
               
@@ -567,7 +740,13 @@ const LandingPage: React.FC = () => {
                   transition: 'background-color 0.2s',
                   marginTop: '1rem'
                 }}
-                onClick={() => plan.price === 0 ? navigate('/registro') : navigate('/registro', { state: { plan: plan.id } })}
+                onClick={() => {
+                  if (plan.price === 0) {
+                    navigate('/registro');
+                  } else {
+                    handleTransferRequest(plan.id);
+                  }
+                }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = 
                     plan.buttonColor === '#3b82f6' ? '#2563eb' :
@@ -585,16 +764,168 @@ const LandingPage: React.FC = () => {
         </div>
         
         <div style={{ textAlign: 'center', marginTop: '3rem', color: '#64748b' }}>
-          <p>✅ 14 días de garantía de devolución | ✅ Soporte 24/7 | ✅ Actualizaciones gratuitas</p>
+          <p>✅ Activación manual por transferencia | ✅ Soporte 24/7 | ✅ Actualizaciones gratuitas</p>
+          <p style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+            💡 ¿Necesitas factura anual con descuento? <a href="#contact" style={{ color: '#3b82f6' }}>Contáctanos</a>
+          </p>
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* NUEVA SECCIÓN: Testimonios */}
+      <section style={{ ...styles.section, backgroundColor: '#f8fafc' }}>
+        <h2 style={styles.sectionTitle}>Lo que dicen nuestros clientes</h2>
+        <p style={styles.sectionSubtitle}>
+          Únete a más de 100 laboratorios que ya confían en DentalFlow.
+        </p>
+        <div style={styles.testimonialGrid}>
+          {testimonials.map((testimonial, index) => (
+            <div key={index} style={styles.testimonialCard}>
+              <div style={styles.testimonialQuote}>"{testimonial.quote}"</div>
+              <div style={styles.testimonialAuthor}>
+                <div style={styles.testimonialAvatar}>
+                  {testimonial.initials}
+                </div>
+                <div style={styles.testimonialInfo}>
+                  <p style={styles.testimonialName}>{testimonial.name}</p>
+                  <p style={styles.testimonialRole}>{testimonial.role}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Modal de Transferencia (sin cambios, solo ajuste de moneda) */}
+      {showTransferModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '1rem',
+            padding: '2rem',
+            maxWidth: '500px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '1.5rem'
+            }}>
+              <h3 style={{ margin: 0, color: '#1e293b' }}>💳 Transferencia Bancaria</h3>
+              <button 
+                onClick={() => setShowTransferModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  color: '#64748b'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h4 style={{ color: '#3b82f6', marginBottom: '1rem' }}>
+                Datos para la transferencia:
+              </h4>
+              <div style={{
+                backgroundColor: '#f8fafc',
+                padding: '1.5rem',
+                borderRadius: '0.5rem',
+                border: '1px solid #e2e8f0'
+              }}>
+                <p><strong>Banco:</strong> Banco de Chile</p>
+                <p><strong>Tipo de cuenta:</strong> Cuenta Corriente</p>
+                <p><strong>Número:</strong> 123-45678-9</p>
+                <p><strong>RUT:</strong> 12.345.678-9</p>
+                <p><strong>Razón Social:</strong> DentalFlow SpA</p>
+                <p><strong>Email para aviso:</strong> transferencias@dentalflow.com</p>
+                <p><strong>Monto:</strong> 
+                  {selectedPlan === 'profesional' ? ' $8.000 CLP/mes' : 
+                   selectedPlan === 'empresarial' ? ' $16.000 CLP/mes' : ' $0'}
+                </p>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h4 style={{ color: '#3b82f6', marginBottom: '1rem' }}>Instrucciones:</h4>
+              <ol style={{ paddingLeft: '1.5rem', color: '#475569' }}>
+                <li style={{ marginBottom: '0.5rem' }}>Realiza la transferencia con los datos proporcionados</li>
+                <li style={{ marginBottom: '0.5rem' }}>Envía el comprobante a transferencias@dentalflow.com</li>
+                <li style={{ marginBottom: '0.5rem' }}>Incluye tu email de registro en el asunto</li>
+                <li>Te activaremos manualmente en 24 horas hábiles</li>
+              </ol>
+            </div>
+            
+            <div style={{
+              backgroundColor: '#f0f9ff',
+              padding: '1rem',
+              borderRadius: '0.5rem',
+              border: '1px solid #e0f2fe',
+              marginBottom: '1.5rem'
+            }}>
+              <p style={{ margin: 0, color: '#0369a1', fontSize: '0.9rem' }}>
+                📧 También puedes registrarte primero y luego realizar la transferencia desde tu panel.
+              </p>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowTransferModal(false)}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  border: '1px solid #cbd5e1',
+                  background: 'white',
+                  color: '#64748b',
+                  borderRadius: '0.5rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  navigate('/registro', { state: { plan: selectedPlan } });
+                }}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  background: '#3b82f6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  cursor: 'pointer'
+                }}
+              >
+                Registrarme Primero
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CTA Section - NUEVO: Aprovecha el precio */}
       <section style={styles.ctaSection} id="contact">
-        <h2 style={styles.ctaTitle}>¿Listo para Transformar tu Laboratorio?</h2>
+        <h2 style={styles.ctaTitle}>¿Listo para transformar tu laboratorio?</h2>
         <p style={styles.ctaSubtitle}>
-          Agenda una demo personalizada y descubre cómo DentalFlow puede aumentar 
-          tu productividad en un 40% desde el primer mes.
+          Únete a los laboratorios que ya están ahorrando miles de pesos al mes 
+          con la mejor tecnología a precio justo.
         </p>
         
         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -621,9 +952,12 @@ const LandingPage: React.FC = () => {
         <p style={{ marginTop: '2rem', opacity: 0.8, fontSize: '0.95rem' }}>
           O contáctanos directamente: <strong>contacto@dentalflow.com</strong>
         </p>
+        <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', opacity: 0.7 }}>
+          📢 Pregunta por nuestro descuento por pago anual (2 meses gratis)
+        </p>
       </section>
 
-      {/* Footer */}
+      {/* Footer - sin cambios */}
       <footer style={styles.footer}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <div style={{ ...styles.logoContainer, justifyContent: 'center', marginBottom: '1rem' }}>

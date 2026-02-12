@@ -14,6 +14,8 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
   const [paso, setPaso] = useState(1);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+  const [mostrarTransferencia, setMostrarTransferencia] = useState(false);
+  const [comprobanteEnviado, setComprobanteEnviado] = useState(false);
   
   const [formData, setFormData] = useState({
     nombre: '',
@@ -49,6 +51,19 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
         'Soporte prioritario',
         'Reportes avanzados',
         'Backup automático'
+      ]
+    },
+    {
+      id: 'empresarial',
+      nombre: 'Plan Empresarial',
+      precio: 99,
+      duracion: 'mes',
+      caracteristicas: [
+        'Todo del plan Profesional',
+        'Soporte 24/7 dedicado',
+        'Reportes personalizados',
+        'White-label disponible',
+        'Onboarding personalizado'
       ]
     }
   ];
@@ -236,7 +251,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
             plan: plan.id,
             rol: 'cliente'
           },
-          emailRedirectTo: `${window.location.origin}/login` // Redirige al login después de confirmar email
+          emailRedirectTo: `${window.location.origin}/login`
         }
       });
 
@@ -260,6 +275,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
             fecha_expiracion: plan.id === 'gratuita' 
               ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 días
               : null,
+            fecha_activacion: plan.id === 'gratuita' ? new Date().toISOString() : null,
             creado_en: new Date().toISOString(),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -271,12 +287,6 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
         }
 
         setPaso(3);
-        
-        // No hacemos redirección automática, el usuario debe confirmar email
-        // setTimeout se mantiene solo como fallback
-        setTimeout(() => {
-          navigate('/login');
-        }, 5000);
       }
     } catch (error: any) {
       console.error('❌ Error en registro:', error);
@@ -296,6 +306,8 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
     }
   };
 
+  const esPlanPago = plan.precio > 0;
+
   if (paso === 3) {
     return (
       <div style={styles.container}>
@@ -303,10 +315,75 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
           <div style={styles.success}>
             <div style={styles.successIcon}>🎉</div>
             <h2>¡Registro Exitoso!</h2>
-            <p>Tu cuenta ha sido creada exitosamente.</p>
-            <p>Hemos enviado un email de confirmación a <strong>{formData.email}</strong></p>
-            <p>Por favor verifica tu email antes de iniciar sesión.</p>
-            <p>Redirigiendo al login en 5 segundos...</p>
+            
+            {esPlanPago ? (
+              <>
+                <p>Tu cuenta <strong>{formData.email}</strong> ha sido creada.</p>
+                <div style={{
+                  backgroundColor: '#f0f9ff',
+                  padding: '1.5rem',
+                  borderRadius: '0.5rem',
+                  margin: '1.5rem 0',
+                  border: '1px solid #e0f2fe'
+                }}>
+                  <h3 style={{ color: '#0369a1', marginBottom: '1rem' }}>
+                    ⚡ Para activar tu plan {plan.nombre}:
+                  </h3>
+                  <ol style={{ paddingLeft: '1.5rem', textAlign: 'left' }}>
+                    <li style={{ marginBottom: '0.5rem' }}>Realiza la transferencia a los datos proporcionados</li>
+                    <li style={{ marginBottom: '0.5rem' }}>Envía el comprobante a <strong>transferencias@dentalflow.com</strong></li>
+                    <li style={{ marginBottom: '0.5rem' }}>Incluye tu email <strong>{formData.email}</strong> en el asunto</li>
+                    <li>Te activaremos manualmente en 24 horas hábiles</li>
+                  </ol>
+                  <p style={{ marginTop: '1rem', color: '#475569' }}>
+                    📧 Recibirás un email cuando tu cuenta esté activa.
+                  </p>
+                </div>
+                <p>Puedes iniciar sesión, pero tu acceso estará limitado hasta la activación.</p>
+              </>
+            ) : (
+              <>
+                <p>Tu cuenta ha sido creada exitosamente.</p>
+                <p>Hemos enviado un email de confirmación a <strong>{formData.email}</strong></p>
+                <p>Por favor verifica tu email antes de iniciar sesión.</p>
+                <p>Tu plan gratuito de 30 días está activo.</p>
+              </>
+            )}
+            
+            <div style={{ marginTop: '2rem' }}>
+              <button 
+                onClick={() => navigate('/login')}
+                style={{
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  padding: '0.75rem 2rem',
+                  border: 'none',
+                  borderRadius: '0.375rem',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  marginRight: '1rem'
+                }}
+              >
+                Ir a Iniciar Sesión
+              </button>
+              
+              {esPlanPago && (
+                <button 
+                  onClick={() => window.location.href = `mailto:transferencias@dentalflow.com?subject=Comprobante de Transferencia - ${formData.email}&body=Hola,%0D%0A%0D%0AAquí adjunto el comprobante de transferencia para mi cuenta DentalFlow.%0D%0A%0D%0ADatos:%0D%0AEmail: ${formData.email}%0D%0APlan: ${plan.nombre}%0D%0A%0D%0AAtt,%0D%0A${formData.nombre}`}
+                  style={{
+                    backgroundColor: '#10b981',
+                    color: 'white',
+                    padding: '0.75rem 2rem',
+                    border: 'none',
+                    borderRadius: '0.375rem',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                  }}
+                >
+                  📧 Enviar Comprobante Ahora
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -414,7 +491,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
                 style={styles.input}
                 value={formData.telefono}
                 onChange={handleInputChange}
-                placeholder="+1 (555) 123-4567"
+                placeholder="+56 9 8420 1462"
                 disabled={cargando}
               />
             </div>
@@ -497,19 +574,133 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
               <p><strong>Plan:</strong> {plan.nombre} ({plan.precio === 0 ? 'Gratuito' : `$${plan.precio}/mes`})</p>
             </div>
 
-            <div style={{ 
-              backgroundColor: '#f0fdf4', 
-              padding: '1rem', 
-              borderRadius: '0.375rem',
-              marginBottom: '1.5rem'
-            }}>
-              <p style={{ margin: 0, fontSize: '0.875rem', color: '#166534' }}>
-                {plan.precio === 0 
-                  ? '✅ Tu plan gratuito de 30 días está listo. Puedes actualizar en cualquier momento.'
-                  : '💳 Para planes de pago, te contactaremos para configurar tu método de pago.'
-                }
-              </p>
-            </div>
+            {/* Sección de Transferencia para Planes de Pago */}
+            {esPlanPago && (
+              <div style={{ 
+                backgroundColor: '#f0f9ff', 
+                padding: '1.5rem', 
+                borderRadius: '0.5rem',
+                marginBottom: '1.5rem',
+                border: '1px solid #e0f2fe'
+              }}>
+                <h4 style={{ color: '#0369a1', marginBottom: '1rem' }}>
+                  💳 Opción de Pago: Transferencia Bancaria
+                </h4>
+                
+                {!mostrarTransferencia ? (
+                  <>
+                    <p style={{ color: '#475569', marginBottom: '1rem' }}>
+                      Para activar tu plan {plan.nombre}, realiza una transferencia bancaria.
+                    </p>
+                    <button
+                      onClick={() => setMostrarTransferencia(true)}
+                      style={{
+                        backgroundColor: '#3b82f6',
+                        color: 'white',
+                        padding: '0.75rem 1.5rem',
+                        border: 'none',
+                        borderRadius: '0.375rem',
+                        cursor: 'pointer',
+                        fontWeight: '500'
+                      }}
+                    >
+                      Ver Datos de Transferencia
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <h5 style={{ color: '#1e293b', marginBottom: '0.5rem' }}>Datos bancarios:</h5>
+                      <div style={{
+                        backgroundColor: 'white',
+                        padding: '1rem',
+                        borderRadius: '0.375rem',
+                        fontSize: '0.9rem'
+                      }}>
+                        <p><strong>Banco:</strong> Banco de Chile</p>
+                        <p><strong>Cuenta:</strong> 123-45678-9</p>
+                        <p><strong>RUT:</strong> 12.345.678-9</p>
+                        <p><strong>Titular:</strong> DentalFlow SpA</p>
+                        <p><strong>Monto:</strong> ${plan.precio} USD/mes</p>
+                        <p><strong>Email para comprobante:</strong> transferencias@dentalflow.com</p>
+                      </div>
+                    </div>
+                    
+                    {!comprobanteEnviado ? (
+                      <div style={{ 
+                        backgroundColor: '#fef3c7',
+                        padding: '1rem',
+                        borderRadius: '0.375rem',
+                        marginBottom: '1rem'
+                      }}>
+                        <p style={{ margin: 0, color: '#92400e', fontSize: '0.9rem' }}>
+                          ⚠️ <strong>Importante:</strong> Después de registrar tu cuenta, 
+                          envía el comprobante de transferencia al email indicado con tu email de registro.
+                          Te activaremos manualmente en 24 horas.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{ 
+                        backgroundColor: '#d1fae5',
+                        padding: '1rem',
+                        borderRadius: '0.375rem',
+                        marginBottom: '1rem'
+                      }}>
+                        <p style={{ margin: 0, color: '#065f46', fontSize: '0.9rem' }}>
+                          ✅ Comprobante enviado. Revisaremos tu transferencia y te activaremos en 24 horas.
+                        </p>
+                      </div>
+                    )}
+                    
+                    <button
+                      onClick={() => {
+                        setComprobanteEnviado(true);
+                        alert('Recuerda enviar el comprobante a transferencias@dentalflow.com\n\nIncluye tu email de registro en el asunto.');
+                      }}
+                      style={{
+                        backgroundColor: '#10b981',
+                        color: 'white',
+                        padding: '0.75rem 1.5rem',
+                        border: 'none',
+                        borderRadius: '0.375rem',
+                        cursor: 'pointer',
+                        fontWeight: '500',
+                        marginRight: '1rem'
+                      }}
+                    >
+                      ✓ Marcar como Transferido
+                    </button>
+                    
+                    <button
+                      onClick={() => setMostrarTransferencia(false)}
+                      style={{
+                        backgroundColor: 'transparent',
+                        color: '#64748b',
+                        padding: '0.75rem 1.5rem',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '0.375rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Ocultar Datos
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {plan.precio === 0 && (
+              <div style={{ 
+                backgroundColor: '#f0fdf4', 
+                padding: '1rem', 
+                borderRadius: '0.375rem',
+                marginBottom: '1.5rem'
+              }}>
+                <p style={{ margin: 0, fontSize: '0.875rem', color: '#166534' }}>
+                  ✅ Tu plan gratuito de 30 días se activará automáticamente después del registro.
+                </p>
+              </div>
+            )}
           </>
         )}
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import Header from '../components/Header'; // Importar el Header
 
 interface GestionClinicasProps {
   onBack?: () => void;
@@ -36,6 +37,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
   const [clinicaEditando, setClinicaEditando] = useState<Clinica | null>(null);
   const [cargando, setCargando] = useState(false);
   const [clinicaSeleccionada, setClinicaSeleccionada] = useState<string>('');
+  const [usuario, setUsuario] = useState<any>(null); // Estado para el usuario
   
   const [formDataClinica, setFormDataClinica] = useState({
     nombre: '',
@@ -61,8 +63,11 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       
       if (!user) {
         alert('No hay usuario autenticado');
+        navigate('/login');
         return;
       }
+
+      setUsuario(user);
 
       console.log('Usuario ID:', user.id);
 
@@ -99,6 +104,15 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       alert(`Error al cargar los datos: ${error.message}`);
     } finally {
       setCargando(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
     }
   };
 
@@ -396,22 +410,14 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     return clinica ? clinica.nombre : 'Clínica no encontrada';
   };
 
-  // Comentado ya que no se usa en el código actual
-  // const getTipoRetencionTexto = (clinica: Clinica) => {
-  //   if (clinica.tipo_retencion === 'con_retencion') {
-  //     return '💰 Con Retención (15.25% fijo) - La clínica retiene y declara al SII';
-  //   } else {
-  //     return '💰 Sin Retención - Tú recibes el total y declaras el PPM al SII';
-  //   }
-  // };
-
   const styles: { [key: string]: React.CSSProperties } = {
     container: {
       padding: '20px',
       backgroundColor: '#f8fafc',
       minHeight: '100vh',
       maxWidth: '1200px',
-      margin: '0 auto'
+      margin: '0 auto',
+      marginTop: '64px' // Añadido para espacio del Header
     },
     header: {
       marginBottom: '30px',
@@ -698,310 +704,321 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+    <>
+      <Header 
+        user={usuario ? {
+          id: usuario.id,
+          email: usuario.email,
+          nombre: usuario.user_metadata?.nombre || usuario.email?.split('@')[0] || 'Usuario',
+          rol: 'user',
+          laboratorio: 'Laboratorio Dental'
+        } : undefined}
+        onLogout={handleLogout}
+        showBackButton={true}
+        onBack={handleVolver}
+        title="Gestión de Clínicas"
+        showTitle={true}
+      />
+      
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <h1 style={styles.title}>🏥 Gestión de Clínicas</h1>
+          </div>
+          
           <button 
-            onClick={handleVolver}
-            style={styles.backButton}
+            onClick={() => abrirModalClinica()}
+            style={styles.addButton}
           >
-            ← Volver al Dashboard
+            + Agregar Clínica
           </button>
-          <h1 style={styles.title}>🏥 Gestión de Clínicas</h1>
         </div>
-        
-        <button 
-          onClick={() => abrirModalClinica()}
-          style={styles.addButton}
-        >
-          + Agregar Clínica
-        </button>
-      </div>
 
-      {cargando && clinicas.length === 0 ? (
-        <div style={styles.loadingText}>Cargando clínicas...</div>
-      ) : (
-        <div>
-          {clinicas.length === 0 ? (
-            <div style={styles.emptyState}>
-              <p style={{ marginBottom: '20px' }}>
-                No hay clínicas registradas. Haz clic en "Agregar Clínica" para comenzar.
-              </p>
-              <button 
-                onClick={() => abrirModalClinica()}
-                style={styles.addButton}
-              >
-                + Agregar Primera Clínica
-              </button>
-            </div>
-          ) : (
-            <div style={styles.clinicasGrid}>
-              {clinicas.map((clinica) => (
-                <div key={clinica.id} style={styles.clinicaCard}>
-                  <div style={styles.clinicaHeader}>
-                    <div style={{ flex: 1 }}>
-                      <h3 style={styles.clinicaNombre}>{clinica.nombre}</h3>
-                      
-                      {clinica.tipo_retencion === 'con_retencion' ? (
-                        <div style={styles.retencionInfo}>
-                          🏛️ Con Retención (15.25%) - La clínica retiene y declara
-                        </div>
-                      ) : (
-                        <div style={styles.retencionInfo}>
-                          💼 Sin Retención - Tú declaras el PPM al SII
-                        </div>
-                      )}
-                      
-                      {clinica.direccion && (
-                        <div style={styles.clinicaInfo}>📍 {clinica.direccion}</div>
-                      )}
-                      {clinica.telefono && (
-                        <div style={styles.clinicaInfo}>📞 {clinica.telefono}</div>
-                      )}
-                      {clinica.email && (
-                        <div style={styles.clinicaInfo}>✉️ {clinica.email}</div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={styles.dentistasSection}>
-                    <div style={styles.dentistasTitle}>
-                      👨‍⚕️ Dentistas ({dentistasPorClinica(clinica.id).length})
-                    </div>
-                    
-                    {dentistasPorClinica(clinica.id).length === 0 ? (
-                      <p style={{ color: '#9ca3af', fontSize: '14px', textAlign: 'center', padding: '10px' }}>
-                        No hay dentistas asignados
-                      </p>
-                    ) : (
-                      dentistasPorClinica(clinica.id).map((dentista) => (
-                        <div key={dentista.id} style={styles.dentistaItem}>
-                          <div style={styles.dentistaInfo}>
-                            <span style={styles.dentistaNombre}>{dentista.nombre}</span>
-                            <span style={styles.dentistaEspecialidad}>{dentista.especialidad}</span>
+        {cargando && clinicas.length === 0 ? (
+          <div style={styles.loadingText}>Cargando clínicas...</div>
+        ) : (
+          <div>
+            {clinicas.length === 0 ? (
+              <div style={styles.emptyState}>
+                <p style={{ marginBottom: '20px' }}>
+                  No hay clínicas registradas. Haz clic en "Agregar Clínica" para comenzar.
+                </p>
+                <button 
+                  onClick={() => abrirModalClinica()}
+                  style={styles.addButton}
+                >
+                  + Agregar Primera Clínica
+                </button>
+              </div>
+            ) : (
+              <div style={styles.clinicasGrid}>
+                {clinicas.map((clinica) => (
+                  <div key={clinica.id} style={styles.clinicaCard}>
+                    <div style={styles.clinicaHeader}>
+                      <div style={{ flex: 1 }}>
+                        <h3 style={styles.clinicaNombre}>{clinica.nombre}</h3>
+                        
+                        {clinica.tipo_retencion === 'con_retencion' ? (
+                          <div style={styles.retencionInfo}>
+                            🏛️ Con Retención (15.25%) - La clínica retiene y declara
                           </div>
-                          <button 
-                            onClick={() => eliminarDentista(dentista)}
-                            style={styles.deleteButton}
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-                      ))
-                    )}
-                    
-                    <button 
-                      onClick={() => abrirModalDentista(clinica.id)}
-                      style={styles.secondaryButton}
-                    >
-                      + Agregar Dentista
-                    </button>
-                  </div>
+                        ) : (
+                          <div style={styles.retencionInfo}>
+                            💼 Sin Retención - Tú declaras el PPM al SII
+                          </div>
+                        )}
+                        
+                        {clinica.direccion && (
+                          <div style={styles.clinicaInfo}>📍 {clinica.direccion}</div>
+                        )}
+                        {clinica.telefono && (
+                          <div style={styles.clinicaInfo}>📞 {clinica.telefono}</div>
+                        )}
+                        {clinica.email && (
+                          <div style={styles.clinicaInfo}>✉️ {clinica.email}</div>
+                        )}
+                      </div>
+                    </div>
 
-                  <div style={styles.cardActions}>
-                    <button 
-                      onClick={() => abrirModalClinica(clinica)}
-                      style={styles.editButton}
-                    >
-                      ✏️ Editar Clínica
-                    </button>
-                    <button 
-                      onClick={() => eliminarClinica(clinica)}
-                      style={styles.deleteButton}
-                    >
-                      🗑️ Eliminar
-                    </button>
+                    <div style={styles.dentistasSection}>
+                      <div style={styles.dentistasTitle}>
+                        👨‍⚕️ Dentistas ({dentistasPorClinica(clinica.id).length})
+                      </div>
+                      
+                      {dentistasPorClinica(clinica.id).length === 0 ? (
+                        <p style={{ color: '#9ca3af', fontSize: '14px', textAlign: 'center', padding: '10px' }}>
+                          No hay dentistas asignados
+                        </p>
+                      ) : (
+                        dentistasPorClinica(clinica.id).map((dentista) => (
+                          <div key={dentista.id} style={styles.dentistaItem}>
+                            <div style={styles.dentistaInfo}>
+                              <span style={styles.dentistaNombre}>{dentista.nombre}</span>
+                              <span style={styles.dentistaEspecialidad}>{dentista.especialidad}</span>
+                            </div>
+                            <button 
+                              onClick={() => eliminarDentista(dentista)}
+                              style={styles.deleteButton}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        ))
+                      )}
+                      
+                      <button 
+                        onClick={() => abrirModalDentista(clinica.id)}
+                        style={styles.secondaryButton}
+                      >
+                        + Agregar Dentista
+                      </button>
+                    </div>
+
+                    <div style={styles.cardActions}>
+                      <button 
+                        onClick={() => abrirModalClinica(clinica)}
+                        style={styles.editButton}
+                      >
+                        ✏️ Editar Clínica
+                      </button>
+                      <button 
+                        onClick={() => eliminarClinica(clinica)}
+                        style={styles.deleteButton}
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {modalClinicaAbierto && (
+          <div style={styles.modalOverlay}>
+            <div style={styles.modalContent}>
+              <div style={styles.modalHeader}>
+                <h2 style={styles.modalTitle}>
+                  {clinicaEditando ? '✏️ Editar Clínica' : '🏥 Agregar Nueva Clínica'}
+                </h2>
+                <button 
+                  onClick={cerrarModales}
+                  style={styles.closeButton}
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <form onSubmit={guardarClinica}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Nombre de la Clínica *</label>
+                  <input
+                    type="text"
+                    style={styles.input}
+                    placeholder="Ej: Clínica Dental Smile"
+                    value={formDataClinica.nombre}
+                    onChange={(e) => setFormDataClinica(prev => ({...prev, nombre: e.target.value}))}
+                    required
+                  />
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
-      {modalClinicaAbierto && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalContent}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>
-                {clinicaEditando ? '✏️ Editar Clínica' : '🏥 Agregar Nueva Clínica'}
-              </h2>
-              <button 
-                onClick={cerrarModales}
-                style={styles.closeButton}
-              >
-                ✕
-              </button>
-            </div>
-            
-            <form onSubmit={guardarClinica}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Nombre de la Clínica *</label>
-                <input
-                  type="text"
-                  style={styles.input}
-                  placeholder="Ej: Clínica Dental Smile"
-                  value={formDataClinica.nombre}
-                  onChange={(e) => setFormDataClinica(prev => ({...prev, nombre: e.target.value}))}
-                  required
-                />
-              </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Dirección</label>
+                  <input
+                    type="text"
+                    style={styles.input}
+                    placeholder="Ej: Av. Principal #123"
+                    value={formDataClinica.direccion}
+                    onChange={(e) => setFormDataClinica(prev => ({...prev, direccion: e.target.value}))}
+                  />
+                </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Dirección</label>
-                <input
-                  type="text"
-                  style={styles.input}
-                  placeholder="Ej: Av. Principal #123"
-                  value={formDataClinica.direccion}
-                  onChange={(e) => setFormDataClinica(prev => ({...prev, direccion: e.target.value}))}
-                />
-              </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Teléfono</label>
+                  <input
+                    type="tel"
+                    style={styles.input}
+                    placeholder="Ej: +1 234 567 8900"
+                    value={formDataClinica.telefono}
+                    onChange={(e) => setFormDataClinica(prev => ({...prev, telefono: e.target.value}))}
+                  />
+                </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Teléfono</label>
-                <input
-                  type="tel"
-                  style={styles.input}
-                  placeholder="Ej: +1 234 567 8900"
-                  value={formDataClinica.telefono}
-                  onChange={(e) => setFormDataClinica(prev => ({...prev, telefono: e.target.value}))}
-                />
-              </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Email</label>
+                  <input
+                    type="email"
+                    style={styles.input}
+                    placeholder="Ej: contacto@clinicadental.com"
+                    value={formDataClinica.email}
+                    onChange={(e) => setFormDataClinica(prev => ({...prev, email: e.target.value}))}
+                  />
+                </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Email</label>
-                <input
-                  type="email"
-                  style={styles.input}
-                  placeholder="Ej: contacto@clinicadental.com"
-                  value={formDataClinica.email}
-                  onChange={(e) => setFormDataClinica(prev => ({...prev, email: e.target.value}))}
-                />
-              </div>
-
-              <div style={styles.retencionSection}>
-                <div style={styles.retencionTitle}>📋 Configuración de Retención PPM/SII</div>
-                
-                <div style={styles.radioGroup}>
-                  <label style={styles.radioOption}>
-                    <input
-                      type="radio"
-                      name="tipo_retencion"
-                      style={styles.radioInput}
-                      value="sin_retencion"
-                      checked={formDataClinica.tipo_retencion === 'sin_retencion'}
-                      onChange={(e) => setFormDataClinica(prev => ({...prev, tipo_retencion: e.target.value as 'sin_retencion'}))}
-                    />
-                    <span style={styles.radioLabel}>
-                      <strong>Sin Retención</strong><br />
-                      <small>Tú recibes el 100% del pago y te encargas de declarar y pagar el PPM (Pago Provisional Mensual) al SII.</small>
-                    </span>
-                  </label>
+                <div style={styles.retencionSection}>
+                  <div style={styles.retencionTitle}>📋 Configuración de Retención PPM/SII</div>
                   
-                  <label style={styles.radioOption}>
-                    <input
-                      type="radio"
-                      name="tipo_retencion"
-                      style={styles.radioInput}
-                      value="con_retencion"
-                      checked={formDataClinica.tipo_retencion === 'con_retencion'}
-                      onChange={(e) => setFormDataClinica(prev => ({...prev, tipo_retencion: e.target.value as 'con_retencion'}))}
-                    />
-                    <span style={styles.radioLabel}>
-                      <strong>Con Retención (15.25% fijo)</strong><br />
-                      <small>La clínica retiene el 15.25% del pago y se encarga de declararlo al SII. Este porcentaje está definido por tu configuración de cuenta.</small>
-                    </span>
-                  </label>
+                  <div style={styles.radioGroup}>
+                    <label style={styles.radioOption}>
+                      <input
+                        type="radio"
+                        name="tipo_retencion"
+                        style={styles.radioInput}
+                        value="sin_retencion"
+                        checked={formDataClinica.tipo_retencion === 'sin_retencion'}
+                        onChange={(e) => setFormDataClinica(prev => ({...prev, tipo_retencion: e.target.value as 'sin_retencion'}))}
+                      />
+                      <span style={styles.radioLabel}>
+                        <strong>Sin Retención</strong><br />
+                        <small>Tú recibes el 100% del pago y te encargas de declarar y pagar el PPM (Pago Provisional Mensual) al SII.</small>
+                      </span>
+                    </label>
+                    
+                    <label style={styles.radioOption}>
+                      <input
+                        type="radio"
+                        name="tipo_retencion"
+                        style={styles.radioInput}
+                        value="con_retencion"
+                        checked={formDataClinica.tipo_retencion === 'con_retencion'}
+                        onChange={(e) => setFormDataClinica(prev => ({...prev, tipo_retencion: e.target.value as 'con_retencion'}))}
+                      />
+                      <span style={styles.radioLabel}>
+                        <strong>Con Retención (15.25% fijo)</strong><br />
+                        <small>La clínica retiene el 15.25% del pago y se encarga de declararlo al SII. Este porcentaje está definido por tu configuración de cuenta.</small>
+                      </span>
+                    </label>
+                  </div>
                 </div>
-              </div>
 
-              <div style={styles.buttonGroup}>
-                <button 
-                  type="button"
-                  onClick={cerrarModales}
-                  style={styles.cancelButton}
-                  disabled={cargando}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit"
-                  style={styles.submitButton}
-                  disabled={cargando}
-                >
-                  {cargando ? 'Guardando...' : (clinicaEditando ? 'Actualizar' : 'Guardar')} Clínica
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {modalDentistaAbierto && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalContent}>
-            <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>👨‍⚕️ Agregar Dentista</h2>
-              <button 
-                onClick={cerrarModales}
-                style={styles.closeButton}
-              >
-                ✕
-              </button>
+                <div style={styles.buttonGroup}>
+                  <button 
+                    type="button"
+                    onClick={cerrarModales}
+                    style={styles.cancelButton}
+                    disabled={cargando}
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    style={styles.submitButton}
+                    disabled={cargando}
+                  >
+                    {cargando ? 'Guardando...' : (clinicaEditando ? 'Actualizar' : 'Guardar')} Clínica
+                  </button>
+                </div>
+              </form>
             </div>
-
-            <div style={styles.clinicaInfoHeader}>
-              Para: {getNombreClinicaSeleccionada()}
-            </div>
-            
-            <form onSubmit={guardarDentista}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Nombre del Dentista *</label>
-                <input
-                  type="text"
-                  style={styles.input}
-                  placeholder="Ej: Dr. Juan Pérez"
-                  value={formDataDentista.nombre}
-                  onChange={(e) => setFormDataDentista(prev => ({...prev, nombre: e.target.value}))}
-                  required
-                />
-              </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Especialidad *</label>
-                <input
-                  type="text"
-                  style={styles.input}
-                  placeholder="Ej: Ortodoncia, Periodoncia, etc."
-                  value={formDataDentista.especialidad}
-                  onChange={(e) => setFormDataDentista(prev => ({...prev, especialidad: e.target.value}))}
-                  required
-                />
-              </div>
-
-              <div style={styles.buttonGroup}>
-                <button 
-                  type="button"
-                  onClick={cerrarModales}
-                  style={styles.cancelButton}
-                  disabled={cargando}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit"
-                  style={styles.submitButton}
-                  disabled={cargando}
-                >
-                  {cargando ? 'Guardando...' : 'Agregar Dentista'}
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+
+        {modalDentistaAbierto && (
+          <div style={styles.modalOverlay}>
+            <div style={styles.modalContent}>
+              <div style={styles.modalHeader}>
+                <h2 style={styles.modalTitle}>👨‍⚕️ Agregar Dentista</h2>
+                <button 
+                  onClick={cerrarModales}
+                  style={styles.closeButton}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={styles.clinicaInfoHeader}>
+                Para: {getNombreClinicaSeleccionada()}
+              </div>
+              
+              <form onSubmit={guardarDentista}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Nombre del Dentista *</label>
+                  <input
+                    type="text"
+                    style={styles.input}
+                    placeholder="Ej: Dr. Juan Pérez"
+                    value={formDataDentista.nombre}
+                    onChange={(e) => setFormDataDentista(prev => ({...prev, nombre: e.target.value}))}
+                    required
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Especialidad *</label>
+                  <input
+                    type="text"
+                    style={styles.input}
+                    placeholder="Ej: Ortodoncia, Periodoncia, etc."
+                    value={formDataDentista.especialidad}
+                    onChange={(e) => setFormDataDentista(prev => ({...prev, especialidad: e.target.value}))}
+                    required
+                  />
+                </div>
+
+                <div style={styles.buttonGroup}>
+                  <button 
+                    type="button"
+                    onClick={cerrarModales}
+                    style={styles.cancelButton}
+                    disabled={cargando}
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    style={styles.submitButton}
+                    disabled={cargando}
+                  >
+                    {cargando ? 'Guardando...' : 'Agregar Dentista'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 };
 

@@ -8,7 +8,7 @@ import Login from './components/Login';
 import Registro from './components/Registro';
 import RecuperacionCuenta from './components/RecuperacionCuenta';
 import Dashboard from './components/Dashboard';
-import DashboardLaboratorista from './components/DashboardLaboratorista'; // <-- NUEVO
+import DashboardLaboratorista from './components/DashboardLaboratorista';
 import CrearTrabajo from './components/CrearTrabajo';
 import GestionClinicas from './components/GestionClinicas';
 import GestionDentistas from './components/GestionDentistas';
@@ -19,15 +19,15 @@ import GestionPrecios from './components/GestionPrecios';
 import OpcionesCuenta from './components/OpcionesCuenta';
 import Reportes from './components/Reportes';
 import AdminPanel from './components/AdminPanel';
+import QREntrega from './components/QREntrega';
+import MiMembresia from './components/MiMembresia';
+import ControlPagosManual from './components/ControlPagosManual';
 
 interface User {
   id: string;
   email: string;
   nombre: string;
   rol: string;
-  suscripcion_activa?: boolean;
-  fecha_expiracion?: string | null;
-  plan?: string;
   laboratorio?: string;
   telefono?: string;
 }
@@ -38,49 +38,40 @@ const App: React.FC = () => {
   const [authListenerSet, setAuthListenerSet] = useState(false);
   const navigate = useNavigate();
 
-  // 1. INICIALIZACIÓN ÚNICA
+  // ============================================
+  // 1. INICIALIZACIÓN DE SESIÓN
+  // ============================================
   useEffect(() => {
-    console.log('🚀 Inicializando aplicación...');
-    
     const initializeAuth = async () => {
       try {
-        // Obtener sesión actual
         const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error('❌ Error obteniendo sesión:', error);
-          setLoading(false);
-          return;
-        }
-        
+        if (error) throw error;
+
         if (session?.user) {
-          console.log('✅ Usuario encontrado:', session.user.email);
-          console.log('📋 Metadata del usuario:', session.user.user_metadata);
-          
+          const { data: perfil } = await supabase
+            .from('perfiles_usuarios')
+            .select('rol, laboratorio, telefono')
+            .eq('id', session.user.id)
+            .single();
+
           const userData: User = {
             id: session.user.id,
             email: session.user.email!,
             nombre: session.user.user_metadata?.nombre || session.user.email!.split('@')[0],
-            rol: session.user.user_metadata?.rol || 'cliente', // <-- OBTIENE EL ROL
-            suscripcion_activa: false,
-            plan: 'gratuita'
+            rol: perfil?.rol || session.user.user_metadata?.rol || 'cliente',
+            laboratorio: perfil?.laboratorio || session.user.user_metadata?.laboratorio,
+            telefono: perfil?.telefono || session.user.user_metadata?.telefono,
           };
-          
-          console.log(`🎭 Rol detectado: ${userData.rol}`);
           setCurrentUser(userData);
-          
-          // Solo redirigir si estamos explícitamente en login/registro
+
           const currentPath = window.location.pathname;
-          if (currentPath === '/login' || currentPath === '/registro' || currentPath === '/recuperacion') {
+          if (['/login', '/registro', '/recuperacion'].includes(currentPath)) {
             navigate('/dashboard');
           }
-        } else {
-          console.log('ℹ️ No hay usuario autenticado');
         }
-        
-        setLoading(false);
       } catch (error) {
-        console.error('💥 Error inicializando app:', error);
+        console.error('Error inicializando:', error);
+      } finally {
         setLoading(false);
       }
     };
@@ -88,290 +79,200 @@ const App: React.FC = () => {
     initializeAuth();
   }, [navigate]);
 
-  // 2. CONFIGURAR LISTENER DE AUTH (solo una vez)
+  // ============================================
+  // 2. LISTENER DE AUTENTICACIÓN
+  // ============================================
   useEffect(() => {
     if (authListenerSet || loading) return;
-    
-    console.log('🔔 Configurando listener de auth...');
+
     setAuthListenerSet(true);
-    
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('🔄 Evento auth:', event, 'Usuario:', session?.user?.email);
-        
-        // Ignorar eventos de refresco
-        if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
-          console.log(`⚡ ${event} - Ignorando`);
-          return;
-        }
-        
+        if (event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') return;
+
         if (event === 'SIGNED_IN' && session?.user) {
-          console.log('📋 Metadata en SIGNED_IN:', session.user.user_metadata);
-          
+          const { data: perfil } = await supabase
+            .from('perfiles_usuarios')
+            .select('rol, laboratorio, telefono')
+            .eq('id', session.user.id)
+            .single();
+
           const userData: User = {
             id: session.user.id,
             email: session.user.email!,
             nombre: session.user.user_metadata?.nombre || session.user.email!.split('@')[0],
-            rol: session.user.user_metadata?.rol || 'cliente', // <-- IMPORTANTE
+            rol: perfil?.rol || session.user.user_metadata?.rol || 'cliente',
+            laboratorio: perfil?.laboratorio || session.user.user_metadata?.laboratorio,
+            telefono: perfil?.telefono || session.user.user_metadata?.telefono,
           };
-          
-          console.log(`🎭 Rol en login: ${userData.rol}`);
           setCurrentUser(userData);
-          
-          // Solo redirigir si estamos en rutas de auth
+
           const currentPath = window.location.pathname;
-          if (currentPath === '/login' || currentPath === '/registro' || currentPath === '/recuperacion') {
+          if (['/login', '/registro', '/recuperacion'].includes(currentPath)) {
             navigate('/dashboard');
           }
         }
-        
+
         if (event === 'SIGNED_OUT') {
-          console.log('🔒 Logout detectado');
           setCurrentUser(null);
-          
-          // Solo redirigir si estamos en rutas protegidas
           const currentPath = window.location.pathname;
-          const protectedRoutes = ['/dashboard', '/crear-trabajo', '/clinicas', '/dentistas', 
-                                  '/laboratoristas', '/servicios', '/trabajos', '/precios', 
-                                  '/configuracion', '/reportes', '/admin', '/opciones-cuenta'];
-          
+          const protectedRoutes = [
+            '/dashboard', '/crear-trabajo', '/clinicas', '/dentistas',
+            '/laboratoristas', '/servicios', '/trabajos', '/precios',
+            '/configuracion', '/reportes', '/admin', '/opciones-cuenta',
+            '/mi-membresia', '/control-pagos', '/entregas'
+          ];
           if (protectedRoutes.includes(currentPath)) {
-            navigate('/login');
+            navigate('/login', { replace: true });
           }
-        }
-        
-        if (event === 'USER_UPDATED' && session?.user) {
-          console.log('📝 Usuario actualizado');
-          const userData: User = {
-            id: session.user.id,
-            email: session.user.email!,
-            nombre: session.user.user_metadata?.nombre || session.user.email!.split('@')[0],
-            rol: session.user.user_metadata?.rol || 'cliente',
-          };
-          setCurrentUser(userData);
         }
       }
     );
-    
-    return () => {
-      console.log('🧹 Limpiando listener de auth');
-      subscription.unsubscribe();
-    };
-  }, [loading, currentUser, navigate, authListenerSet]);
 
-  // 3. LOADER
+    return () => subscription.unsubscribe();
+  }, [loading, authListenerSet, navigate]);
+
+  // ============================================
+  // 3. LOGOUT
+  // ============================================
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error en logout:', error);
+      throw error;
+    }
+  };
+
+  // ============================================
+  // 4. COMPONENTE DE RUTA PROTEGIDA (SIN VALIDACIÓN DE MEMBRESÍA)
+  // ============================================
+  const ProtectedRoute = ({
+    children,
+    allowedRoles = ['admin', 'cliente', 'laboratorista'],
+  }: {
+    children: React.ReactNode;
+    allowedRoles?: string[];
+  }) => {
+    const [cargando, setCargando] = useState(true);
+    const [usuario, setUsuario] = useState<User | null>(null);
+    const [rol, setRol] = useState<string | null>(null);
+
+    useEffect(() => {
+      const verificarUsuario = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setCargando(false);
+          return;
+        }
+
+        const { data: perfil } = await supabase
+          .from('perfiles_usuarios')
+          .select('rol, laboratorio, telefono')
+          .eq('id', user.id)
+          .single();
+
+        const userData: User = {
+          id: user.id,
+          email: user.email!,
+          nombre: user.user_metadata?.nombre || user.email!.split('@')[0],
+          rol: perfil?.rol || user.user_metadata?.rol || 'cliente',
+          laboratorio: perfil?.laboratorio || user.user_metadata?.laboratorio,
+          telefono: perfil?.telefono || user.user_metadata?.telefono,
+        };
+        setUsuario(userData);
+        setRol(userData.rol);
+        setCargando(false);
+      };
+      verificarUsuario();
+    }, []);
+
+    if (cargando) {
+      return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Cargando...</div>;
+    }
+
+    // No autenticado
+    if (!usuario) {
+      return <Navigate to="/login" replace />;
+    }
+
+    // Rol no permitido
+    if (!allowedRoles.includes(rol || '')) {
+      return <Navigate to="/dashboard" replace />;
+    }
+
+    // ✅ Acceso permitido (el Dashboard maneja internamente la membresía)
+    return <>{children}</>;
+  };
+
+  // ============================================
+  // 5. LOADER INICIAL
+  // ============================================
   if (loading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        backgroundColor: '#f8fafc'
-      }}>
-        <div style={{ 
-          textAlign: 'center',
-          padding: '2rem',
-          borderRadius: '1rem',
-          backgroundColor: 'white',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-        }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
+        <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🦷</div>
-          <div style={{ 
-            width: '40px', 
-            height: '40px', 
-            border: '4px solid #3b82f6',
-            borderTopColor: 'transparent',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem'
-          }}></div>
-          <div style={{ color: '#64748b', fontSize: '1rem' }}>Iniciando DentalFlow...</div>
+          <div style={{ width: '40px', height: '40px', border: '4px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
+          <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
         </div>
-        <style>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
       </div>
     );
   }
 
-  console.log('🎉 App cargada. Usuario:', currentUser?.email, 'Rol:', currentUser?.rol);
-
-  // 4. FUNCIÓN DE LOGOUT COMPARTIDA
-  const handleLogout = async () => {
-    if (window.confirm('¿Estás seguro de que quieres cerrar sesión?')) {
-      console.log('🚪 Iniciando logout...');
-      await supabase.auth.signOut();
-    }
-  };
-
-  // 5. COMPONENTE PARA RUTAS PROTEGIDAS CON ROL
-  const ProtectedRoute = ({ 
-    children, 
-    allowedRoles = ['admin', 'cliente', 'laboratorista'] 
-  }: { 
-    children: React.ReactNode;
-    allowedRoles?: string[];
-  }) => {
-    if (!currentUser) {
-      console.log('🚫 Usuario no autenticado, redirigiendo a login');
-      return <Navigate to="/login" />;
-    }
-    
-    if (!allowedRoles.includes(currentUser.rol)) {
-      console.log(`🚫 Rol no permitido: ${currentUser.rol}, redirigiendo a dashboard`);
-      return <Navigate to="/dashboard" />;
-    }
-    
-    return <>{children}</>;
-  };
-
+  // ============================================
+  // 6. RUTAS
+  // ============================================
   return (
-    <div className="App">
-      <Routes>
-        {/* RUTA PRINCIPAL */}
-        <Route path="/" element={<LandingPage />} />
-        
-        {/* AUTENTICACIÓN */}
-        <Route 
-          path="/login" 
-          element={currentUser ? <Navigate to="/dashboard" /> : <Login />} 
-        />
-        
-        <Route 
-          path="/registro" 
-          element={currentUser ? <Navigate to="/dashboard" /> : <Registro onBack={() => navigate('/')} />} 
-        />
-        
-        <Route 
-          path="/recuperacion" 
-          element={currentUser ? <Navigate to="/dashboard" /> : <RecuperacionCuenta onBack={() => navigate('/login')} />} 
-        />
-        
-        {/* DASHBOARD PRINCIPAL - DIFERENTE SEGÚN ROL */}
-<Route 
-  path="/dashboard" 
-  element={
-    currentUser ? (
-      currentUser.rol === 'laboratorista' ? (
-        <DashboardLaboratorista user={currentUser} onLogout={handleLogout} />
-      ) : (
-        <Dashboard user={currentUser} onLogout={handleLogout} />
-      )
-    ) : (
-      <Navigate to="/login" />
-    )
-  } 
-/>
-        
-        {/* MÓDULOS DEL SISTEMA - SOLO PARA ADMIN/CLIENTE */}
-        <Route 
-          path="/crear-trabajo" 
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'cliente']}>
-              <CrearTrabajo onBack={() => navigate('/dashboard')} />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/clinicas" 
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'cliente']}>
-              <GestionClinicas />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/dentistas" 
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'cliente']}>
-              <GestionDentistas />
-            </ProtectedRoute>
-          } 
-        />
-        
-        {/* GESTIÓN DE LABORATORISTAS - SOLO ADMIN */}
-        <Route 
-          path="/laboratoristas" 
-          element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <GestionLaboratoristas />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/servicios" 
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'cliente']}>
-              <GestionServicios />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/trabajos" 
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
-              <GestionTrabajos />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/precios" 
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'cliente']}>
-              <GestionPrecios />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/configuracion" 
-          element={
-            <ProtectedRoute>
-              <OpcionesCuenta onBack={() => navigate('/dashboard')} />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/reportes" 
-          element={
-            <ProtectedRoute allowedRoles={['admin', 'cliente']}>
-              <Reportes onBack={() => navigate('/dashboard')} />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/admin" 
-          element={
-            <ProtectedRoute allowedRoles={['admin']}>
-              <AdminPanel onBack={() => navigate('/dashboard')} />
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/opciones-cuenta" 
-          element={
-            <ProtectedRoute>
-              <OpcionesCuenta onBack={() => navigate('/dashboard')} />
-            </ProtectedRoute>
-          } 
-        />
-        
-        {/* RUTA POR DEFECTO */}
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </div>
+    <Routes>
+      {/* Públicas */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={currentUser ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route path="/registro" element={currentUser ? <Navigate to="/dashboard" replace /> : <Registro onBack={() => navigate('/')} />} />
+      <Route path="/recuperacion" element={currentUser ? <Navigate to="/dashboard" replace /> : <RecuperacionCuenta onBack={() => navigate('/login')} />} />
+
+      {/* Dashboard según rol */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            {currentUser?.rol === 'laboratorista' ? (
+              <DashboardLaboratorista user={currentUser} onLogout={handleLogout} />
+            ) : (
+              <Dashboard user={currentUser!} onLogout={handleLogout} />
+            )}
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Mi Membresía - accesible para clientes autenticados */}
+      <Route
+        path="/mi-membresia"
+        element={
+          <ProtectedRoute allowedRoles={['admin', 'cliente']}>
+            <MiMembresia />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Módulos protegidos (sin validación de membresía, el dashboard bloquea internamente) */}
+      <Route path="/crear-trabajo" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><CrearTrabajo onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/clinicas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionClinicas /></ProtectedRoute>} />
+      <Route path="/dentistas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionDentistas /></ProtectedRoute>} />
+      <Route path="/laboratoristas" element={<ProtectedRoute allowedRoles={['admin']}><GestionLaboratoristas /></ProtectedRoute>} />
+      <Route path="/control-pagos" element={<ProtectedRoute allowedRoles={['admin']}><ControlPagosManual /></ProtectedRoute>} />
+      <Route path="/servicios" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionServicios /></ProtectedRoute>} />
+      <Route path="/trabajos" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><GestionTrabajos /></ProtectedRoute>} />
+      <Route path="/precios" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionPrecios /></ProtectedRoute>} />
+      <Route path="/configuracion" element={<ProtectedRoute><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/reportes" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><Reportes onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminPanel onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/opciones-cuenta" element={<ProtectedRoute><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/entregas" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><QREntrega /></ProtectedRoute>} />
+
+      {/* 404 -> Landing */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 };
 

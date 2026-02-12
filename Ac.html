@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h2>Crear Administrador con Clave</h2>
+    
+    <input type="email" id="email" placeholder="admin@tudominio.com"><br><br>
+    <input type="password" id="password" placeholder="Clave segura"><br><br>
+    <button onclick="createAdmin()">Crear Admin</button>
+    
+    <div id="result"></div>
+    
+    <script>
+        async function createAdmin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('result');
+            
+            resultDiv.innerHTML = `
+                <h3>📋 INSTRUCCIONES:</h3>
+                <ol>
+                    <li>Ve a <a href="https://supabase.com" target="_blank">Supabase</a></li>
+                    <li>Tu proyecto → <strong>Authentication → Users</strong></li>
+                    <li>Haz clic en <strong>"Invite User"</strong></li>
+                    <li>Email: <code>${email}</code></li>
+                    <li>Password: <code>${password}</code></li>
+                    <li>Haz clic en <strong>"Invite"</strong></li>
+                </ol>
+                
+                <p>Después ejecuta este SQL:</p>
+                <textarea rows="10" cols="80">
+UPDATE perfiles_usuarios 
+SET 
+  rol = 'admin',
+  plan = 'enterprise',
+  suscripcion_activa = true,
+  fecha_expiracion = '2099-12-31'
+WHERE email = '${email}';
+
+-- Si no existe el perfil:
+INSERT INTO perfiles_usuarios (id, email, nombre, rol, plan, suscripcion_activa, fecha_expiracion)
+SELECT 
+  id, 
+  '${email}',
+  'Administrador',
+  'admin',
+  'enterprise',
+  true,
+  '2099-12-31'
+FROM auth.users WHERE email = '${email}'
+ON CONFLICT (id) DO UPDATE SET
+  rol = 'admin',
+  plan = 'enterprise',
+  suscripcion_activa = true,
+  fecha_expiracion = '2099-12-31';
+                </textarea>
+            `;
+        }
+    </script>
+</body>
+</html>

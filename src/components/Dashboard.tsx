@@ -2,26 +2,27 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
+import { useMembresia } from '../hooks/useMembresia';
 
 interface DashboardUser {
   id: string;
   email: string;
   nombre: string;
   rol: string;
-  plan?: string;
-  fecha_expiracion?: string | null;
-  suscripcion_activa?: boolean;
   laboratorio?: string;
   telefono?: string;
 }
 
 interface DashboardProps {
   user: DashboardUser;
-  onLogout: () => void;
+  onLogout: () => Promise<void>;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const navigate = useNavigate();
+  const membresia = useMembresia(user.id);
+
+  // Estados para búsqueda y resultados
   const [terminoBusqueda, setTerminoBusqueda] = useState('');
   const [resultados, setResultados] = useState<{
     pacientes: any[];
@@ -33,6 +34,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     trabajos: []
   });
 
+  // Estados para estadísticas
   const [estadisticas, setEstadisticas] = useState({
     totalClinicas: 0,
     totalDentistas: 0,
@@ -42,40 +44,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     trabajosTerminados: 0
   });
 
+  // Estados UI
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [hoveredResultado, setHoveredResultado] = useState<string | null>(null);
   const [cargandoEstadisticas, setCargandoEstadisticas] = useState(true);
   const [cargandoBusqueda, setCargandoBusqueda] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
-  const calcularDiasRestantes = () => {
-    if (!user.fecha_expiracion || user.fecha_expiracion === null) return 0;
-    
-    try {
-      const expiracion = new Date(user.fecha_expiracion);
-      const hoy = new Date();
-      const diferencia = expiracion.getTime() - hoy.getTime();
-      return Math.ceil(diferencia / (1000 * 60 * 60 * 24));
-    } catch (error) {
-      console.error('Error parseando fecha:', error);
-      return 0;
-    }
-  };
-
-  const diasRestantes = calcularDiasRestantes();
-  const tieneSuscripcionActiva = user.suscripcion_activa && diasRestantes > 0;
-
+  // ============================================
+  // 1. CARGA DE ESTADÍSTICAS
+  // ============================================
   const cargarEstadisticas = useCallback(async () => {
     try {
       setCargandoEstadisticas(true);
-
-      const { data: perfilData } = await supabase
-        .from('perfiles_usuarios')
-        .select('rol')
-        .eq('id', user.id)
-        .single();
-
-      const esAdmin = perfilData?.rol === 'admin';
+      const esAdmin = user.rol === 'admin';
 
       if (esAdmin) {
         const [
@@ -128,43 +110,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           trabajosTerminados: trabajosTerminados || 0
         });
       }
-
     } catch (error) {
       console.error('Error cargando estadísticas:', error);
     } finally {
       setCargandoEstadisticas(false);
     }
-  }, [user.id]);
+  }, [user.id, user.rol]);
 
   useEffect(() => {
     cargarEstadisticas();
   }, [cargarEstadisticas]);
 
-  // FUNCIÓN CORREGIDA PARA CERRAR SESIÓN
-  const handleLogout = async () => {
-    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) {
-      return;
-    }
-
-    try {
-      setCerrandoSesion(true);
-      
-      // Primero llamamos a la función onLogout del padre
-      if (onLogout) {
-        await onLogout();
-      }
-      
-      // Luego redirigimos a la página principal (login)
-      navigate('/');
-      
-    } catch (error) {
-      console.error('Error al cerrar sesión:', error);
-      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
-    } finally {
-      setCerrandoSesion(false);
-    }
-  };
-
+  // ============================================
+  // 2. BÚSQUEDA (completa)
+  // ============================================
   const handleBuscar = async (termino: string) => {
     setTerminoBusqueda(termino);
     setCargandoBusqueda(true);
@@ -178,13 +137,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     const terminoLower = termino.toLowerCase();
 
     try {
-      const { data: perfilData } = await supabase
-        .from('perfiles_usuarios')
-        .select('rol')
-        .eq('id', user.id)
-        .single();
-
-      const esAdmin = perfilData?.rol === 'admin';
+      const esAdmin = user.rol === 'admin';
 
       const queryClinicas = supabase
         .from('clinicas')
@@ -225,7 +178,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
          !pacientesEncontrados.some(p => p.id === t.id))
       ) || [];
 
-      const resultadosFormateados = {
+      setResultados({
         clinicas: clinicasData || [],
         pacientes: pacientesEncontrados.map((p: any) => ({
           ...p,
@@ -242,10 +195,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           dentista: t.dentistas?.nombre || 'Sin dentista',
           laboratorista: t.laboratoristas?.nombre || 'No asignado'
         }))
-      };
-
-      setResultados(resultadosFormateados);
-
+      });
     } catch (error) {
       console.error('Error en búsqueda:', error);
       setResultados({ pacientes: [], clinicas: [], trabajos: [] });
@@ -254,6 +204,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
+  // ============================================
+  // 3. LOGOUT
+  // ============================================
+  const handleLogout = async () => {
+    if (cerrandoSesion) return;
+    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
+
+    try {
+      setCerrandoSesion(true);
+      await onLogout();
+      navigate('/', { replace: true });
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+    } finally {
+      setCerrandoSesion(false);
+    }
+  };
+
+  // ============================================
+  // 4. UTILIDADES
+  // ============================================
   const getBadgeStyle = (estado: string) => {
     switch (estado) {
       case 'pendiente':
@@ -279,16 +251,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
-  const getPlanDisplayName = (plan?: string) => {
-    switch (plan) {
-      case 'gratuita': return 'Prueba Gratuita';
-      case 'profesional': return 'Profesional';
-      case 'enterprise': return 'Empresarial';
-      default: return plan || 'Sin plan';
-    }
-  };
-
   const handleResultadoClick = (tipo: string, item: any) => {
+    // Si la membresía no está activa y no es admin, no permitir navegación
+    if (!membresia.estaActiva && user.rol !== 'admin') {
+      alert('Tu membresía no está activa. Renueva para acceder a esta sección.');
+      return;
+    }
     if (tipo === 'paciente' || tipo === 'trabajo') {
       navigate('/trabajos');
     } else if (tipo === 'clinica') {
@@ -296,10 +264,49 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
-  const handleModuleClick = (path: string) => {
+  const handleModuleClick = (path: string, moduleId: string) => {
+    // Solo Mi Membresía está habilitado si la membresía no está activa (y no es admin)
+    if (user.rol !== 'admin' && !membresia.estaActiva && moduleId !== 'mi-membresia') {
+      alert('Tu membresía no está activa. Renueva para acceder a este módulo.');
+      return;
+    }
     navigate(path);
   };
 
+  // ============================================
+  // 5. MÓDULOS
+  // ============================================
+  const modulesAdmin = [
+    { id: 'control-pagos', icon: '💳', title: 'Control de Pagos Manual', description: 'Registra y gestiona pagos de membresías de forma manual.', path: '/control-pagos' },
+    { id: 'clinicas', icon: '🏥', title: 'Clínicas y Dentistas', description: 'Gestiona todas las clínicas dentales y odontólogos del sistema.', path: '/clinicas' },
+    { id: 'crear-trabajo', icon: '📋', title: 'Crear Lista de Trabajo', description: 'Crea nuevos trabajos seleccionando clínica, dentista y servicios.', path: '/crear-trabajo' },
+    { id: 'trabajos-proceso', icon: '🔧', title: 'Trabajos en Proceso', description: 'Control y seguimiento de todos los trabajos dentales en producción.', path: '/trabajos' },
+    { id: 'laboratoristas', icon: '👨‍🔧', title: 'Laboratoristas', description: 'Gestiona todos los técnicos y laboratoristas del sistema.', path: '/laboratoristas' },
+    { id: 'precios', icon: '💰', title: 'Lista de Precios', description: 'Configura precios base y personalizados por clínica/dentista.', path: '/precios' },
+    { id: 'mi-membresia', icon: '⏳', title: 'Mi Membresía', description: 'Consulta tu plan actual y días restantes.', path: '/mi-membresia' },
+    { id: 'reportes', icon: '📊', title: 'Reportes', description: 'Genera reportes de trabajos, ingresos y productividad.', path: '/reportes' },
+    { id: 'admin', icon: '👑', title: 'Panel de Administración', description: 'Gestiona usuarios, membresías y ve estadísticas del sistema.', path: '/admin' },
+    { id: 'opciones-cuenta', icon: '⚙️', title: 'Opciones del Sistema', description: 'Configura la información general del sistema y parámetros.', path: '/configuracion' },
+    { id: 'entregas', icon: '📦', title: 'Registro de Entregas', description: 'Escanea códigos QR para registrar entregas de trabajos.', path: '/entregas' }
+  ];
+
+  const modulesCliente = [
+    { id: 'clinicas', icon: '🏥', title: 'Mis Clínicas y Dentistas', description: 'Gestiona tus clínicas dentales y odontólogos asociados.', path: '/clinicas' },
+    { id: 'crear-trabajo', icon: '📋', title: 'Crear Lista de Trabajo', description: 'Crea nuevos trabajos seleccionando clínica, dentista y servicios.', path: '/crear-trabajo' },
+    { id: 'trabajos-proceso', icon: '🔧', title: 'Mis Trabajos en Proceso', description: 'Control y seguimiento de tus trabajos dentales en producción.', path: '/trabajos' },
+    { id: 'laboratoristas', icon: '👨‍🔧', title: 'Mis Laboratoristas', description: 'Gestiona los técnicos y laboratoristas de tu laboratorio.', path: '/laboratoristas' },
+    { id: 'precios', icon: '💰', title: 'Mi Lista de Precios', description: 'Configura tus precios base y personalizados.', path: '/precios' },
+    { id: 'reportes', icon: '📊', title: 'Mis Reportes', description: 'Genera reportes de tus trabajos, ingresos y productividad.', path: '/reportes' },
+    { id: 'opciones-cuenta', icon: '⚙️', title: 'Opciones de la Cuenta', description: 'Configura la información de tu laboratorio, logo y porcentajes.', path: '/configuracion' },
+    { id: 'entregas', icon: '📦', title: 'Registro de Entregas', description: 'Escanea códigos QR para registrar entregas de trabajos.', path: '/entregas' },
+    { id: 'mi-membresia', icon: '⏳', title: 'Mi Membresía', description: 'Consulta tu plan actual, días restantes y renueva tu suscripción.', path: '/mi-membresia' }
+  ];
+
+  const modules = user.rol === 'admin' ? modulesAdmin : modulesCliente;
+
+  // ============================================
+  // 6. ESTILOS COMPLETOS (ICONOS MEJORADOS)
+  // ============================================
   const styles = {
     container: {
       minHeight: '100vh',
@@ -390,8 +397,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       borderRadius: '1rem',
       fontSize: '0.75rem',
       fontWeight: '600',
-      backgroundColor: diasRestantes > 7 ? '#10b981' : diasRestantes > 3 ? '#f59e0b' : '#ef4444',
-      color: 'white'
+      marginLeft: '0.5rem'
     },
     searchContainer: {
       marginBottom: '2rem',
@@ -460,13 +466,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       position: 'relative' as const,
       borderLeft: '4px solid #3b82f6'
     },
+    moduleCardDisabled: {
+      opacity: 0.7,
+      cursor: 'not-allowed',
+      borderLeft: '4px solid #94a3b8',
+      filter: 'grayscale(20%)',
+      backgroundColor: '#f9fafb'
+    },
+    // ✅ ICONOS MEJORADOS - VERSIÓN SÓLIDA CON SOMBRA
     moduleIcon: {
-      fontSize: '2.5rem',
+      fontSize: '2.2rem',
       marginBottom: '1rem',
-      background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      backgroundClip: 'text'
+      color: '#3b82f6',
+      filter: 'drop-shadow(0 4px 3px rgba(0,0,0,0.07))',
+      transition: 'all 0.2s ease'
+    },
+    moduleIconDisabled: {
+      fontSize: '2.2rem',
+      marginBottom: '1rem',
+      color: '#94a3b8',
+      filter: 'drop-shadow(0 2px 2px rgba(0,0,0,0.03))',
+      opacity: 0.8,
+      transition: 'all 0.2s ease'
     },
     moduleTitle: {
       fontSize: '1.25rem',
@@ -477,7 +498,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     moduleDescription: {
       color: '#64748b',
       lineHeight: '1.6',
-      marginBottom: '1.5rem'
+      marginBottom: '1.5rem',
+      fontSize: '0.95rem'
     },
     moduleButton: {
       backgroundColor: '#3b82f6',
@@ -489,6 +511,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       fontWeight: '600',
       cursor: 'pointer',
       transition: 'background-color 0.2s'
+    },
+    moduleButtonDisabled: {
+      backgroundColor: '#94a3b8',
+      cursor: 'not-allowed',
+      opacity: 0.7
+    },
+    // ✅ CANDADO ELEGANTE
+    lockOverlay: {
+      position: 'absolute' as const,
+      top: '0.75rem',
+      right: '0.75rem',
+      fontSize: '1.2rem',
+      color: '#94a3b8',
+      backgroundColor: 'white',
+      padding: '0.25rem',
+      borderRadius: '9999px',
+      width: '32px',
+      height: '32px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+      border: '1px solid #e2e8f0',
+      zIndex: 10
     },
     resultadosContainer: {
       backgroundColor: 'white',
@@ -571,182 +617,83 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
-  // Módulos según rol
-  const modulesAdmin = [
-    {
-      id: 'clinicas',
-      icon: '🏥',
-      title: 'Clínicas y Dentistas',
-      description: 'Gestiona todas las clínicas dentales y odontólogos del sistema.',
-      path: '/clinicas'
-    },
-    {
-      id: 'crear-trabajo',
-      icon: '📋',
-      title: 'Crear Lista de Trabajo',
-      description: 'Crea nuevos trabajos seleccionando clínica, dentista y servicios.',
-      path: '/crear-trabajo'
-    },
-    {
-      id: 'trabajos-proceso',
-      icon: '🔧',
-      title: 'Trabajos en Proceso',
-      description: 'Control y seguimiento de todos los trabajos dentales en producción.',
-      path: '/trabajos'
-    },
-    {
-      id: 'laboratoristas',
-      icon: '👨‍🔧',
-      title: 'Laboratoristas',
-      description: 'Gestiona todos los técnicos y laboratoristas del sistema.',
-      path: '/laboratoristas'
-    },
-    {
-      id: 'precios',
-      icon: '💰',
-      title: 'Lista de Precios',
-      description: 'Configura precios base y personalizados por clínica/dentista.',
-      path: '/precios'
-    },
-    {
-      id: 'reportes',
-      icon: '📊',
-      title: 'Reportes',
-      description: 'Genera reportes de trabajos, ingresos y productividad.',
-      path: '/reportes'
-    },
-    {
-      id: 'admin',
-      icon: '👑',
-      title: 'Panel de Administración',
-      description: 'Gestiona usuarios, membresías y ve estadísticas del sistema.',
-      path: '/admin'
-    },
-    {
-      id: 'opciones-cuenta',
-      icon: '⚙️',
-      title: 'Opciones del Sistema',
-      description: 'Configura la información general del sistema y parámetros.',
-      path: '/configuracion'
-    }
-  ];
-
-  const modulesCliente = [
-    {
-      id: 'clinicas',
-      icon: '🏥',
-      title: 'Mis Clínicas y Dentistas',
-      description: 'Gestiona tus clínicas dentales y odontólogos asociados.',
-      path: '/clinicas'
-    },
-    {
-      id: 'crear-trabajo',
-      icon: '📋',
-      title: 'Crear Lista de Trabajo',
-      description: 'Crea nuevos trabajos seleccionando clínica, dentista y servicios.',
-      path: '/crear-trabajo'
-    },
-    {
-      id: 'trabajos-proceso',
-      icon: '🔧',
-      title: 'Mis Trabajos en Proceso',
-      description: 'Control y seguimiento de tus trabajos dentales en producción.',
-      path: '/trabajos'
-    },
-    {
-      id: 'laboratoristas',
-      icon: '👨‍🔧',
-      title: 'Mis Laboratoristas',
-      description: 'Gestiona los técnicos y laboratoristas de tu laboratorio.',
-      path: '/laboratoristas'
-    },
-    {
-      id: 'precios',
-      icon: '💰',
-      title: 'Mi Lista de Precios',
-      description: 'Configura tus precios base y personalizados.',
-      path: '/precios'
-    },
-    {
-      id: 'reportes',
-      icon: '📊',
-      title: 'Mis Reportes',
-      description: 'Genera reportes de tus trabajos, ingresos y productividad.',
-      path: '/reportes'
-    },
-    {
-      id: 'opciones-cuenta',
-      icon: '⚙️',
-      title: 'Opciones de la Cuenta',
-      description: 'Configura la información de tu laboratorio, logo y porcentajes.',
-      path: '/configuracion'
-    }
-  ];
-
-  const modules = user?.rol === 'admin' ? modulesAdmin : modulesCliente;
+  // ============================================
+  // 7. RENDERIZADO
+  // ============================================
+  const esAdmin = user.rol === 'admin';
+  const membresiaActiva = membresia.estaActiva;
+  const mostrarBusquedaYEstadisticas = esAdmin || membresiaActiva;
 
   return (
     <div style={styles.container}>
-      {/* Header Reutilizable */}
-      <Header 
+      <Header
         user={user}
         onLogout={handleLogout}
         cerrandoSesion={cerrandoSesion}
+        showTitle
         title="Dashboard - DentalFlow Manager"
       />
 
-      {/* Main Content */}
       <main style={styles.mainContent}>
-        {/* Welcome Section */}
+        {/* Welcome Section - siempre visible */}
         <section style={styles.welcomeSection}>
           <h1 style={styles.welcomeTitle}>
-            ¡Bienvenido de nuevo, {user?.nombre}!
-            {user?.rol === 'admin' && (
-              <span style={styles.adminBadge}>ADMINISTRADOR</span>
-            )}
+            ¡Bienvenido de nuevo, {user.nombre}!
+            {esAdmin && <span style={styles.adminBadge}>ADMINISTRADOR</span>}
           </h1>
           <p style={styles.welcomeSubtitle}>
-            {user?.rol === 'admin' 
-              ? 'Sistema de gestión completo - Modo Administrador' 
-              : `Gestión completa de tu laboratorio dental ${user?.laboratorio ? `- ${user?.laboratorio}` : ''}`
+            {esAdmin
+              ? 'Sistema de gestión completo - Modo Administrador'
+              : `Gestión completa de tu laboratorio dental ${user.laboratorio ? `- ${user.laboratorio}` : ''}`
             }
           </p>
 
-          {/* Subscription Info */}
+          {/* Subscription Info - siempre visible */}
           <div style={styles.subscriptionCard}>
             <div style={styles.subscriptionItem}>
               <div style={styles.subscriptionLabel}>Plan Actual</div>
               <div style={styles.subscriptionValue}>
-                {getPlanDisplayName(user?.plan)}
-                <span style={{
-                  ...styles.planBadge,
-                  ...(tieneSuscripcionActiva ? styles.planActive : styles.planInactive)
-                }}>
-                  {tieneSuscripcionActiva ? 'ACTIVO' : 'INACTIVO'}
-                </span>
-              </div>
-            </div>
-            
-            <div style={styles.subscriptionItem}>
-              <div style={styles.subscriptionLabel}>Días Restantes</div>
-              <div style={styles.subscriptionValue}>
-                {diasRestantes > 0 ? diasRestantes : 0} días
-                {diasRestantes > 0 && (
-                  <span style={styles.daysBadge}>
-                    {diasRestantes > 7 ? '✔ OK' : diasRestantes > 3 ? '⚠ PRONTO' : '⚠ VENCIDO'}
+                {membresia.cargando ? 'Cargando...' : (() => {
+                  switch (membresia.plan) {
+                    case 'gratuita': return 'Prueba Gratuita';
+                    case 'profesional': return 'Profesional';
+                    case 'empresarial': return 'Empresarial';
+                    default: return membresia.plan;
+                  }
+                })()}
+                {!membresia.cargando && (
+                  <span style={{
+                    ...styles.planBadge,
+                    ...(membresiaActiva ? styles.planActive : styles.planInactive)
+                  }}>
+                    {membresiaActiva ? 'ACTIVO' : 'INACTIVO'}
                   </span>
                 )}
               </div>
             </div>
-            
-            {user?.email && (
-              <div style={styles.subscriptionItem}>
-                <div style={styles.subscriptionLabel}>Email</div>
-                <div style={styles.subscriptionValue}>{user.email}</div>
+
+            <div style={styles.subscriptionItem}>
+              <div style={styles.subscriptionLabel}>Días Restantes</div>
+              <div style={styles.subscriptionValue}>
+                {membresia.cargando ? '...' : `${membresia.dias_restantes} días`}
+                {!membresia.cargando && membresia.dias_restantes > 0 && (
+                  <span style={{
+                    ...styles.daysBadge,
+                    backgroundColor: membresia.dias_restantes > 7 ? '#10b981' : membresia.dias_restantes > 3 ? '#f59e0b' : '#ef4444',
+                    color: 'white'
+                  }}>
+                    {membresia.dias_restantes > 7 ? '✔ OK' : membresia.dias_restantes > 3 ? '⚠ PRONTO' : '⚠ VENCE PRONTO'}
+                  </span>
+                )}
               </div>
-            )}
-            
-            {user?.telefono && (
+            </div>
+
+            <div style={styles.subscriptionItem}>
+              <div style={styles.subscriptionLabel}>Email</div>
+              <div style={styles.subscriptionValue}>{user.email}</div>
+            </div>
+
+            {user.telefono && (
               <div style={styles.subscriptionItem}>
                 <div style={styles.subscriptionLabel}>Teléfono</div>
                 <div style={styles.subscriptionValue}>📞 {user.telefono}</div>
@@ -754,99 +701,100 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             )}
           </div>
 
-          {/* Search */}
-          <div style={styles.searchContainer}>
-            <div style={styles.searchIcon}>🔍</div>
-            <input
-              type="text"
-              style={styles.searchInput}
-              placeholder="Buscar pacientes, clínicas, trabajos, servicios..."
-              value={terminoBusqueda}
-              onChange={(e) => handleBuscar(e.target.value)}
-              onFocus={(e) => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'}
-              onBlur={(e) => e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)'}
-            />
-          </div>
+          {/* Search - solo visible para admin o membresía activa */}
+          {mostrarBusquedaYEstadisticas && (
+            <div style={styles.searchContainer}>
+              <div style={styles.searchIcon}>🔍</div>
+              <input
+                type="text"
+                style={styles.searchInput}
+                placeholder="Buscar pacientes, clínicas, trabajos, servicios..."
+                value={terminoBusqueda}
+                onChange={(e) => handleBuscar(e.target.value)}
+                onFocus={(e) => e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.1)'}
+                onBlur={(e) => e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)'}
+              />
+            </div>
+          )}
         </section>
 
-        {/* Stats Grid */}
-        <div style={styles.statsGrid}>
-          <div 
-            style={styles.statCard}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)';
-              e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
-            }}
-          >
-            <div style={styles.statNumber}>
-              {cargandoEstadisticas ? '...' : estadisticas.totalClinicas}
+        {/* Stats Grid - solo visible para admin o membresía activa */}
+        {mostrarBusquedaYEstadisticas && (
+          <div style={styles.statsGrid}>
+            <div
+              style={styles.statCard}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-5px)';
+                e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
+              }}
+            >
+              <div style={styles.statNumber}>
+                {cargandoEstadisticas ? '...' : estadisticas.totalClinicas}
+              </div>
+              <div style={styles.statLabel}>Clínicas</div>
             </div>
-            <div style={styles.statLabel}>Clínicas</div>
-          </div>
-          
-          <div 
-            style={styles.statCard}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)';
-              e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
-            }}
-          >
-            <div style={styles.statNumber}>
-              {cargandoEstadisticas ? '...' : estadisticas.totalDentistas}
+            <div
+              style={styles.statCard}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-5px)';
+                e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
+              }}
+            >
+              <div style={styles.statNumber}>
+                {cargandoEstadisticas ? '...' : estadisticas.totalDentistas}
+              </div>
+              <div style={styles.statLabel}>Dentistas</div>
             </div>
-            <div style={styles.statLabel}>Dentistas</div>
-          </div>
-          
-          <div 
-            style={styles.statCard}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)';
-              e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
-            }}
-          >
-            <div style={styles.statNumber}>
-              {cargandoEstadisticas ? '...' : estadisticas.totalTrabajos}
+            <div
+              style={styles.statCard}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-5px)';
+                e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
+              }}
+            >
+              <div style={styles.statNumber}>
+                {cargandoEstadisticas ? '...' : estadisticas.totalTrabajos}
+              </div>
+              <div style={styles.statLabel}>Total Trabajos</div>
             </div>
-            <div style={styles.statLabel}>Total Trabajos</div>
-          </div>
-          
-          <div 
-            style={styles.statCard}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-5px)';
-              e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
-            }}
-          >
-            <div style={{...styles.statNumber, color: '#ef4444'}}>
-              {cargandoEstadisticas ? '...' : estadisticas.trabajosPendientes}
+            <div
+              style={styles.statCard}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-5px)';
+                e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
+              }}
+            >
+              <div style={{ ...styles.statNumber, color: '#ef4444' }}>
+                {cargandoEstadisticas ? '...' : estadisticas.trabajosPendientes}
+              </div>
+              <div style={styles.statLabel}>Trabajos Pendientes</div>
             </div>
-            <div style={styles.statLabel}>Trabajos Pendientes</div>
           </div>
-        </div>
+        )}
 
-        {/* Search Results */}
-        {terminoBusqueda.trim() && (
+        {/* Search Results - solo visible si hay búsqueda y está permitido */}
+        {mostrarBusquedaYEstadisticas && terminoBusqueda.trim() && (
           <div style={styles.resultadosContainer}>
             <h3 style={styles.resultadoTitle}>
               Resultados para: "{terminoBusqueda}"
               {cargandoBusqueda && (
-                <span style={{color: '#64748b', fontSize: '0.875rem', marginLeft: '1rem'}}>
+                <span style={{ color: '#64748b', fontSize: '0.875rem', marginLeft: '1rem' }}>
                   Buscando...
                 </span>
               )}
@@ -962,17 +910,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             )}
 
             {/* Empty State */}
-            {!cargandoBusqueda && resultados.pacientes.length === 0 && 
-             resultados.clinicas.length === 0 && 
-             resultados.trabajos.length === 0 && (
-              <div style={styles.emptyState}>
-                No se encontraron resultados para "{terminoBusqueda}"
-              </div>
-            )}
+            {!cargandoBusqueda && resultados.pacientes.length === 0 &&
+              resultados.clinicas.length === 0 &&
+              resultados.trabajos.length === 0 && (
+                <div style={styles.emptyState}>
+                  No se encontraron resultados para "{terminoBusqueda}"
+                </div>
+              )}
           </div>
         )}
 
-        {/* Modules Grid */}
+        {/* Modules Grid - SIEMPRE visible, con estados habilitado/deshabilitado */}
         {!terminoBusqueda.trim() && (
           <>
             <h2 style={{
@@ -981,48 +929,88 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               marginBottom: '2rem',
               color: '#1e293b'
             }}>
-              Módulos del Sistema
+              {esAdmin ? 'Módulos del Sistema' : (membresiaActiva ? 'Módulos del Sistema' : 'Acceso Restringido')}
             </h2>
-            
+
             <div style={styles.modulesGrid}>
-              {modules.map(module => (
-                <div
-                  key={module.id}
-                  style={{
-                    ...styles.moduleCard,
-                    ...(hoveredCard === module.id ? {
-                      transform: 'translateY(-5px)',
-                      boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
-                    } : {})
-                  }}
-                  onMouseEnter={() => setHoveredCard(module.id)}
-                  onMouseLeave={() => setHoveredCard(null)}
-                  onClick={() => handleModuleClick(module.path)}
-                >
-                  <div style={styles.moduleIcon}>{module.icon}</div>
-                  <h3 style={styles.moduleTitle}>{module.title}</h3>
-                  <p style={styles.moduleDescription}>{module.description}</p>
-                  <button 
-                    style={styles.moduleButton}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleModuleClick(module.path);
+              {modules.map(module => {
+                const deshabilitado = !esAdmin && !membresiaActiva && module.id !== 'mi-membresia';
+
+                return (
+                  <div
+                    key={module.id}
+                    style={{
+                      ...styles.moduleCard,
+                      ...(deshabilitado ? styles.moduleCardDisabled : {}),
+                      ...(hoveredCard === module.id && !deshabilitado ? {
+                        transform: 'translateY(-5px)',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                      } : {})
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
+                    onMouseEnter={() => !deshabilitado && setHoveredCard(module.id)}
+                    onMouseLeave={() => !deshabilitado && setHoveredCard(null)}
+                    onClick={() => !deshabilitado && handleModuleClick(module.path, module.id)}
                   >
-                    {module.id === 'clinicas' && (user?.rol === 'admin' ? 'Gestionar Clínicas' : 'Mis Clínicas')}
-                    {module.id === 'crear-trabajo' && 'Crear Trabajo'}
-                    {module.id === 'trabajos-proceso' && (user?.rol === 'admin' ? 'Ver Trabajos' : 'Mis Trabajos')}
-                    {module.id === 'laboratoristas' && (user?.rol === 'admin' ? 'Gestionar Técnicos' : 'Mis Laboratoristas')}
-                    {module.id === 'precios' && (user?.rol === 'admin' ? 'Gestionar Precios' : 'Mis Precios')}
-                    {module.id === 'reportes' && (user?.rol === 'admin' ? 'Ver Reportes' : 'Mis Reportes')}
-                    {module.id === 'admin' && 'Panel de Admin'}
-                    {module.id === 'opciones-cuenta' && (user?.rol === 'admin' ? 'Configurar Sistema' : 'Configurar Cuenta')}
-                  </button>
-                </div>
-              ))}
+                    <div style={{
+                      ...styles.moduleIcon,
+                      ...(deshabilitado ? styles.moduleIconDisabled : {})
+                    }}>
+                      {module.icon}
+                    </div>
+                    <h3 style={styles.moduleTitle}>{module.title}</h3>
+                    <p style={styles.moduleDescription}>{module.description}</p>
+                    {deshabilitado && (
+                      <div style={styles.lockOverlay}>🔒</div>
+                    )}
+                    <button
+                      style={{
+                        ...styles.moduleButton,
+                        ...(deshabilitado ? styles.moduleButtonDisabled : {})
+                      }}
+                      disabled={deshabilitado}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!deshabilitado) handleModuleClick(module.path, module.id);
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!deshabilitado) e.currentTarget.style.backgroundColor = '#2563eb';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!deshabilitado) e.currentTarget.style.backgroundColor = '#3b82f6';
+                      }}
+                    >
+                      {module.id === 'mi-membresia' && 'Ver Membresía'}
+                      {module.id === 'clinicas' && (esAdmin ? 'Gestionar Clínicas' : 'Mis Clínicas')}
+                      {module.id === 'crear-trabajo' && 'Crear Trabajo'}
+                      {module.id === 'trabajos-proceso' && (esAdmin ? 'Ver Trabajos' : 'Mis Trabajos')}
+                      {module.id === 'laboratoristas' && (esAdmin ? 'Gestionar Técnicos' : 'Mis Laboratoristas')}
+                      {module.id === 'precios' && (esAdmin ? 'Gestionar Precios' : 'Mis Precios')}
+                      {module.id === 'reportes' && (esAdmin ? 'Ver Reportes' : 'Mis Reportes')}
+                      {module.id === 'admin' && 'Panel de Admin'}
+                      {module.id === 'opciones-cuenta' && (esAdmin ? 'Configurar Sistema' : 'Configurar Cuenta')}
+                      {module.id === 'control-pagos' && 'Gestionar Pagos'}
+                      {module.id === 'entregas' && 'Registrar Entregas'}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
+
+            {/* Mensaje adicional para clientes con membresía inactiva */}
+            {!esAdmin && !membresiaActiva && (
+              <div style={{
+                backgroundColor: '#fef3c7',
+                border: '1px solid #fbbf24',
+                borderRadius: '0.75rem',
+                padding: '1.5rem',
+                marginTop: '1rem',
+                textAlign: 'center' as const
+              }}>
+                <p style={{ margin: 0, color: '#92400e', fontSize: '1rem' }}>
+                  ⚠️ Tu membresía no está activa. Solo puedes acceder al módulo "Mi Membresía" para renovar.
+                </p>
+              </div>
+            )}
           </>
         )}
       </main>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
+import { QRCodeSVG as QRCode } from 'qrcode.react';
 
 interface GestionTrabajosProps {
   onBack?: () => void;
@@ -91,8 +92,10 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
   const [modalAbierto, setModalAbierto] = useState(false);
   const [modalEdicionAbierto, setModalEdicionAbierto] = useState(false);
   const [modalNotasAbierto, setModalNotasAbierto] = useState(false);
+  const [modalQRAbierto, setModalQRAbierto] = useState(false);
   const [trabajoEditando, setTrabajoEditando] = useState<Trabajo | null>(null);
   const [trabajoConNotas, setTrabajoConNotas] = useState<Trabajo | null>(null);
+  const [trabajoQR, setTrabajoQR] = useState<Trabajo | null>(null);
   const [nuevaNota, setNuevaNota] = useState('');
   const [cargando, setCargando] = useState(false);
   const [trabajoExpandido, setTrabajoExpandido] = useState<string | null>(null);
@@ -139,11 +142,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         if (modalAbierto) setModalAbierto(false);
         if (modalEdicionAbierto) setModalEdicionAbierto(false);
         if (modalNotasAbierto) setModalNotasAbierto(false);
+        if (modalQRAbierto) setModalQRAbierto(false);
       }
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [modalAbierto, modalEdicionAbierto, modalNotasAbierto]);
+  }, [modalAbierto, modalEdicionAbierto, modalNotasAbierto, modalQRAbierto]);
 
   const cargarDatos = async () => {
     try {
@@ -325,6 +329,37 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     setModalNotasAbierto(true);
   };
 
+  const abrirModalQR = (trabajo: Trabajo) => {
+    setTrabajoQR(trabajo);
+    setModalQRAbierto(true);
+  };
+
+  const descargarQR = () => {
+    if (!trabajoQR) return;
+
+    try {
+      // Buscar el canvas del QR
+      const canvas = document.getElementById('qr-canvas') as HTMLCanvasElement;
+      if (!canvas) {
+        console.error('No se encontró el canvas del QR');
+        return;
+      }
+
+      // Crear un enlace temporal para descargar
+      const url = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `qr-entrega-${trabajoQR.id}.png`;
+      link.href = url;
+      link.click();
+
+      // Mostrar mensaje de éxito
+      alert('✅ QR descargado correctamente');
+    } catch (error) {
+      console.error('Error descargando QR:', error);
+      alert('❌ Error al descargar el QR');
+    }
+  };
+
   const guardarNota = async () => {
     if (!trabajoConNotas) return;
 
@@ -341,6 +376,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         prev.map(t => t.id === trabajoConNotas.id ? { ...t, notas: nuevaNota } : t)
       );
       setModalNotasAbierto(false);
+      alert('✅ Notas guardadas correctamente');
     } catch (error) {
       console.error('Error guardando nota:', error);
       alert('❌ Error al guardar nota');
@@ -370,6 +406,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
             .services-table th { background-color: #f8f9fa; }
             .total { text-align: right; font-size: 18px; font-weight: bold; margin-top: 30px; }
             .notes { margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #007bff; }
+            .qr-code { text-align: center; margin: 20px 0; }
             @media print {
               body { padding: 0; }
               .no-print { display: none; }
@@ -380,6 +417,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           <div class="header">
             <h1>HOJA DE TRABAJO DENTAL</h1>
             <p><strong>Fecha:</strong> ${new Date(trabajo.fecha_creacion).toLocaleDateString()}</p>
+            <p><strong>Código Trabajo:</strong> ${trabajo.id}</p>
           </div>
           
           <div class="patient-info">
@@ -389,7 +427,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
             <p><strong>Dentista:</strong> ${dentista?.nombre || 'No especificado'}</p>
             <p><strong>Laboratorista:</strong> ${laboratorista?.nombre || 'No asignado'}</p>
             <p><strong>Estado:</strong> ${trabajo.estado}</p>
-            <p><strong>Fecha Entrega Estimada:</strong> ${new Date(trabajo.fecha_entrega_estimada).toLocaleDateString()}</p>
+            <p><strong>Fecha Entrega Estimada:</strong> ${trabajo.fecha_entrega_estimada ? new Date(trabajo.fecha_entrega_estimada).toLocaleDateString() : 'Sin fecha'}</p>
           </div>
           
           <h2>Prestaciones del Trabajo</h2>
@@ -406,7 +444,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
               </tr>
             </thead>
             <tbody>
-              ${trabajo.servicios.map((servicio, index) => {
+              ${trabajo.servicios?.map((servicio, index) => {
                 const servicioInfo = servicios.find(s => s.id === servicio.servicio_id);
                 return `
                   <tr>
@@ -419,12 +457,20 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                     <td>${servicio.nota_especial || '-'}</td>
                   </tr>
                 `;
-              }).join('')}
+              }).join('') || '<tr><td colspan="7" style="text-align:center;">No hay servicios</td></tr>'}
             </tbody>
           </table>
           
           <div class="total">
             <p>TOTAL: $${trabajo.precio_total.toLocaleString()}</p>
+          </div>
+          
+          <div class="qr-code">
+            <h3>Código QR para Entrega:</h3>
+            <div style="display: inline-block; padding: 10px; background: white; border: 1px solid #ddd;">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${trabajo.id}" alt="QR de Entrega" />
+            </div>
+            <p style="font-size: 12px; color: #666;">Escanear para registrar entrega</p>
           </div>
           
           ${trabajo.notas ? `
@@ -765,7 +811,8 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 1000
+      zIndex: 1000,
+      backdropFilter: 'blur(4px)'
     } as React.CSSProperties,
     
     modalContent: {
@@ -776,6 +823,16 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       maxWidth: '500px',
       maxHeight: '90vh',
       overflow: 'auto',
+      boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
+    } as React.CSSProperties,
+    
+    qrModalContent: {
+      backgroundColor: 'white',
+      padding: '2rem',
+      borderRadius: '0.75rem',
+      width: '95%',
+      maxWidth: '500px',
+      textAlign: 'center' as const,
       boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
     } as React.CSSProperties
   };
@@ -802,7 +859,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           
           <button 
             style={styles.button}
-            onClick={() => setModalAbierto(true)}
+            onClick={() => navigate('/crear-trabajo')}
             onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
           >
@@ -944,7 +1001,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
               }
             </p>
             {trabajos.length === 0 && (
-              <button style={styles.button} onClick={() => setModalAbierto(true)}>
+              <button 
+                style={styles.button} 
+                onClick={() => navigate('/crear-trabajo')}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
+              >
                 ➕ Crear Primer Trabajo
               </button>
             )}
@@ -1144,6 +1206,14 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                             <div style={styles.accionesContainer}>
                               <button 
                                 style={styles.buttonSmall}
+                                onClick={() => abrirModalQR(trabajo)}
+                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                              >
+                                📦 Generar QR
+                              </button>
+                              <button 
+                                style={styles.buttonSmall}
                                 onClick={() => abrirModalNotas(trabajo)}
                                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
                                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
@@ -1181,49 +1251,154 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
             );
           })
         )}
+      </div>
 
-        {/* MODAL DE NOTAS */}
-        {modalNotasAbierto && trabajoConNotas && (
-          <div style={styles.modalOverlay} onClick={() => setModalNotasAbierto(false)}>
-            <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem' }}>
-                📝 Notas - {trabajoConNotas.paciente}
-              </h2>
-              <textarea
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '0.5rem',
-                  fontSize: '0.875rem',
-                  minHeight: '120px',
-                  resize: 'vertical'
-                }}
-                value={nuevaNota}
-                onChange={(e) => setNuevaNota(e.target.value)}
-                placeholder="Agrega notas sobre el tratamiento..."
-              />
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-                <button 
-                  style={styles.buttonSmall}
-                  onClick={() => setModalNotasAbierto(false)}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  style={{ ...styles.button, backgroundColor: '#10b981', padding: '0.625rem 1.25rem' }}
-                  onClick={guardarNota}
-                  disabled={cargando}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#059669'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
-                >
-                  {cargando ? 'Guardando...' : 'Guardar Notas'}
-                </button>
-              </div>
+      {/* MODAL DE NOTAS */}
+      {modalNotasAbierto && trabajoConNotas && (
+        <div style={styles.modalOverlay} onClick={() => setModalNotasAbierto(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '1rem' }}>
+              📝 Notas - {trabajoConNotas.paciente}
+            </h2>
+            <textarea
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #e2e8f0',
+                borderRadius: '0.5rem',
+                fontSize: '0.875rem',
+                minHeight: '120px',
+                resize: 'vertical'
+              }}
+              value={nuevaNota}
+              onChange={(e) => setNuevaNota(e.target.value)}
+              placeholder="Agrega notas sobre el tratamiento..."
+            />
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button 
+                style={styles.buttonSmall}
+                onClick={() => setModalNotasAbierto(false)}
+              >
+                Cancelar
+              </button>
+              <button 
+                style={{ ...styles.button, backgroundColor: '#10b981', padding: '0.625rem 1.25rem' }}
+                onClick={guardarNota}
+                disabled={cargando}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#059669'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
+              >
+                {cargando ? 'Guardando...' : 'Guardar Notas'}
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* MODAL DE QR */}
+      {modalQRAbierto && trabajoQR && (
+        <div style={styles.modalOverlay} onClick={() => setModalQRAbierto(false)}>
+          <div style={styles.qrModalContent} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '0.5rem' }}>
+              📦 QR de Entrega
+            </h2>
+            <p style={{ color: '#64748b', marginBottom: '1.5rem' }}>
+              Para: <strong>{trabajoQR.paciente}</strong>
+            </p>
+            
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'center',
+              marginBottom: '2rem',
+              padding: '1.5rem',
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              border: '2px dashed #e2e8f0'
+            }}>
+              <QRCode 
+                value={trabajoQR.id} 
+                size={250}
+                includeMargin={true}
+                level="H"
+                fgColor="#1e293b"
+                bgColor="#ffffff"
+              />
+            </div>
+            
+            <div style={{ 
+              backgroundColor: '#f8fafc', 
+              padding: '1rem', 
+              borderRadius: '8px',
+              marginBottom: '1.5rem'
+            }}>
+              <div style={{ fontSize: '0.875rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                <strong>📋 Instrucciones para entrega:</strong>
+              </div>
+              <ol style={{ 
+                fontSize: '0.75rem', 
+                color: '#64748b', 
+                paddingLeft: '1.5rem',
+                margin: 0,
+                textAlign: 'left'
+              }}>
+                <li>Imprime este código QR</li>
+                <li>Pégalo en el paquete del trabajo</li>
+                <li>El repartidor escaneará el QR con la app de entregas</li>
+                <li>Se registrará automáticamente como "entregado"</li>
+              </ol>
+            </div>
+            
+            <div style={{ 
+              backgroundColor: '#fef3c7', 
+              padding: '0.75rem', 
+              borderRadius: '8px',
+              marginBottom: '1.5rem',
+              fontSize: '0.75rem',
+              color: '#92400e',
+              textAlign: 'left'
+            }}>
+              <strong>⚠️ Nota:</strong> Este QR contiene el ID único del trabajo ({trabajoQR.id.substring(0, 8)}...)
+            </div>
+            
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+              <button 
+                onClick={descargarQR}
+                style={{
+                  ...styles.button,
+                  backgroundColor: '#3b82f6',
+                  padding: '0.75rem 1.5rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}
+              >
+                📥 Descargar QR
+              </button>
+              <button 
+                onClick={() => setModalQRAbierto(false)}
+                style={{ 
+                  ...styles.button, 
+                  backgroundColor: '#64748b',
+                  padding: '0.75rem 1.5rem'
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+            
+            {/* Canvas oculto para descargar */}
+            <div style={{ display: 'none' }}>
+              <QRCode 
+                id="qr-canvas"
+                value={trabajoQR.id} 
+                size={300}
+                includeMargin={true}
+                level="H"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

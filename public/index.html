@@ -1,43 +1,491 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="utf-8" />
+    
+    <!-- ==================== METATAGS ESENCIALES PWA ==================== -->
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- Configuración iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DentalFlow Entregas">
+    
+    <!-- Configuración Android -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="DentalFlow Entregas">
+    
+    <!-- Configuración Windows -->
+    <meta name="msapplication-TileColor" content="#3b82f6">
+    <meta name="msapplication-TileImage" content="%PUBLIC_URL%/logo144.png">
+    
+    <!-- Metatags de la aplicación -->
+    <meta name="description" content="Sistema de gestión dental para laboratorios y clínicas. Gestión de trabajos, pacientes, entregas con QR y más.">
+    <meta name="keywords" content="dental, laboratorio, clínica, dentista, gestión, entregas, QR, pacientes">
+    <meta name="author" content="DentalFlow">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="DentalFlow - Sistema de Gestión Dental">
+    <meta property="og:description" content="Gestión completa de laboratorios dentales con sistema de entregas por QR">
+    <meta property="og:image" content="%PUBLIC_URL%/logo512.png">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:title" content="DentalFlow - Sistema de Gestión Dental">
+    <meta property="twitter:description" content="Gestión completa de laboratorios dentales con sistema de entregas por QR">
+    <meta property="twitter:image" content="%PUBLIC_URL%/logo512.png">
+    
+    <!-- ==================== ICONOS Y FAVICONS ==================== -->
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Web site created using create-react-app"
-    />
+    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/favicon-16x16.png">
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
+    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/logo180.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="%PUBLIC_URL%/logo167.png">
+    
+    <!-- Safari pinned tab -->
+    <link rel="mask-icon" href="%PUBLIC_URL%/safari-pinned-tab.svg" color="#3b82f6">
+    
+    <!-- ==================== MANIFEST Y RECURSOS ==================== -->
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
-
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <title>React App</title>
+    
+    <!-- Preconexión para mejor performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Título de la aplicación -->
+    <title>DentalFlow - Sistema de Gestión Dental</title>
+    
+    <!-- ==================== ESTILOS CRÍTICOS INLINE ==================== -->
+    <style>
+      /* Estilos críticos para carga inicial rápida */
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+          'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background-color: #f8fafc;
+        overflow-x: hidden;
+      }
+      
+      /* Indicador de carga para PWA */
+      #pwa-loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #f8fafc;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        transition: opacity 0.5s ease;
+      }
+      
+      .pwa-loading-spinner {
+        width: 60px;
+        height: 60px;
+        border: 5px solid rgba(59, 130, 246, 0.2);
+        border-top: 5px solid #3b82f6;
+        border-radius: 50%;
+        animation: spin 1.2s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+        margin-bottom: 20px;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      /* Ocultar contenido hasta que React cargue */
+      #root {
+        opacity: 0;
+        transition: opacity 0.5s ease;
+        min-height: 100vh;
+      }
+      
+      #root.loaded {
+        opacity: 1;
+      }
+      
+      /* Estilos para PWA standalone */
+      .pwa-standalone {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+        background-color: #f8fafc;
+      }
+      
+      /* Notch support para iPhone X+ */
+      @supports (padding: max(0px)) {
+        .pwa-standalone {
+          padding-top: max(env(safe-area-inset-top), 20px);
+          padding-bottom: max(env(safe-area-inset-bottom), 20px);
+        }
+      }
+      
+      /* Banner offline */
+      #offline-banner {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+        text-align: center;
+        padding: 12px;
+        z-index: 9997;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 2px 10px rgba(220, 38, 38, 0.2);
+        animation: slideDown 0.3s ease;
+      }
+      
+      @keyframes slideDown {
+        from { transform: translateY(-100%); }
+        to { transform: translateY(0); }
+      }
+      
+      /* Scrollbar personalizada */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      
+      /* Selección de texto */
+      ::selection {
+        background-color: rgba(59, 130, 246, 0.3);
+        color: #1e293b;
+      }
+      
+      /* Evitar zoom en iOS en inputs */
+      @supports (-webkit-touch-callout: none) {
+        input, textarea, select {
+          font-size: 16px !important;
+        }
+      }
+    </style>
+    
+    <!-- ==================== SCRIPT DE CARGA PWA ==================== -->
+    <script>
+      // Detectar si estamos en modo PWA (instalada)
+      function isPWAStandalone() {
+        return window.matchMedia('(display-mode: standalone)').matches || 
+               window.navigator.standalone === true ||
+               document.referrer.includes('android-app://');
+      }
+      
+      // Configurar la app cuando cargue
+      window.addEventListener('load', function() {
+        // Ocultar indicador de carga suavemente
+        const loadingElement = document.getElementById('pwa-loading');
+        if (loadingElement) {
+          loadingElement.style.opacity = '0';
+          setTimeout(function() {
+            loadingElement.style.display = 'none';
+          }, 500);
+        }
+        
+        // Mostrar contenido de React
+        const rootElement = document.getElementById('root');
+        if (rootElement) {
+          setTimeout(function() {
+            rootElement.classList.add('loaded');
+          }, 100);
+        }
+        
+        // Si es PWA instalada, agregar clase especial
+        if (isPWAStandalone()) {
+          document.body.classList.add('pwa-standalone');
+          console.log('📱 PWA ejecutándose en modo standalone (instalada)');
+          
+          // Guardar en localStorage para uso posterior
+          localStorage.setItem('pwaMode', 'true');
+          
+          // Para la ruta de entregas, forzar landscape en tablets
+          if (window.location.pathname.includes('/entregas')) {
+            const isTablet = window.innerWidth >= 768 && window.innerWidth <= 1024;
+            if (isTablet) {
+              const meta = document.createElement('meta');
+              meta.name = 'screen-orientation';
+              meta.content = 'landscape';
+              document.head.appendChild(meta);
+            }
+          }
+        } else {
+          localStorage.removeItem('pwaMode');
+        }
+        
+        // Detectar conexión a internet
+        function updateOnlineStatus() {
+          const isOnline = navigator.onLine;
+          
+          if (!isOnline) {
+            // Mostrar banner de offline
+            let offlineBanner = document.getElementById('offline-banner');
+            if (!offlineBanner) {
+              offlineBanner = document.createElement('div');
+              offlineBanner.id = 'offline-banner';
+              offlineBanner.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                  <span style="font-size: 16px;">📶</span>
+                  <span>Sin conexión a internet - Modo offline activado</span>
+                </div>
+              `;
+              document.body.appendChild(offlineBanner);
+            }
+            
+            // Cambiar color del theme para indicar offline
+            const themeMeta = document.querySelector('meta[name="theme-color"]');
+            if (themeMeta) {
+              themeMeta.setAttribute('content', '#6b7280');
+            }
+          } else {
+            // Remover banner de offline si existe
+            const offlineBanner = document.getElementById('offline-banner');
+            if (offlineBanner) {
+              offlineBanner.remove();
+            }
+            
+            // Restaurar color del theme
+            const themeMeta = document.querySelector('meta[name="theme-color"]');
+            if (themeMeta) {
+              themeMeta.setAttribute('content', '#3b82f6');
+            }
+          }
+          
+          // Enviar evento a React
+          window.dispatchEvent(new CustomEvent('connectionChange', { 
+            detail: { online: isOnline } 
+          }));
+        }
+        
+        // Configurar eventos de conexión
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+        
+        // Estado inicial
+        updateOnlineStatus();
+        
+        // Manejar actualizaciones del Service Worker
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.addEventListener('controllerchange', function() {
+            console.log('🔄 Service Worker actualizado, recargando...');
+            window.location.reload();
+          });
+        }
+        
+        // Detectar instalação PWA
+        window.addEventListener('beforeinstallprompt', function(e) {
+          console.log('📱 Evento de instalación PWA disponible');
+          // Guardar evento para uso posterior
+          window.deferredInstallPrompt = e;
+          
+          // Mostrar botón de instalación después de 3 segundos
+          setTimeout(function() {
+            window.dispatchEvent(new CustomEvent('showInstallPrompt'));
+          }, 3000);
+        });
+        
+        // Detectar después de instalar
+        window.addEventListener('appinstalled', function() {
+          console.log('✅ PWA instalada exitosamente');
+          localStorage.setItem('pwaInstalled', 'true');
+          window.deferredInstallPrompt = null;
+        });
+        
+        // Prevenir acciones por defecto en PWA
+        if (isPWAStandalone()) {
+          // Prevenir gestos de refresh en iOS
+          document.addEventListener('touchmove', function(e) {
+            if (e.touches.length > 1) {
+              e.preventDefault();
+            }
+          }, { passive: false });
+        }
+      });
+      
+      // Manejar errores globales
+      window.addEventListener('error', function(e) {
+        console.error('🔴 Error global:', e.message, e.filename, e.lineno);
+        // Aquí podrías enviar a un servicio de monitoreo
+      });
+      
+      // Manejar promesas no capturadas
+      window.addEventListener('unhandledrejection', function(e) {
+        console.error('🔴 Promesa rechazada no manejada:', e.reason);
+      });
+      
+      // Mejorar performance en móviles
+      document.addEventListener('DOMContentLoaded', function() {
+        // Prevenir zoom en inputs
+        document.addEventListener('focusin', function(e) {
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            setTimeout(function() {
+              window.scrollTo(0, 0);
+            }, 100);
+          }
+        });
+      });
+      
+      // Función global para instalar PWA
+      window.installPWA = function() {
+        if (window.deferredInstallPrompt) {
+          window.deferredInstallPrompt.prompt();
+          
+          window.deferredInstallPrompt.userChoice.then(function(choiceResult) {
+            if (choiceResult.outcome === 'accepted') {
+              console.log('✅ Usuario aceptó instalar la PWA');
+            } else {
+              console.log('❌ Usuario rechazó instalar la PWA');
+            }
+            window.deferredInstallPrompt = null;
+          });
+        } else {
+          console.log('ℹ️ No hay prompt de instalación disponible');
+        }
+      };
+      
+      // Función para verificar si se puede instalar
+      window.canInstallPWA = function() {
+        return !!window.deferredInstallPrompt;
+      };
+      
+      // Función para verificar si es PWA
+      window.isPWA = function() {
+        return isPWAStandalone();
+      };
+    </script>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <!-- ==================== INDICADOR DE CARGA PWA ==================== -->
+    <div id="pwa-loading">
+      <div class="pwa-loading-spinner"></div>
+      <div style="text-align: center; margin-top: 20px;">
+        <div style="color: #3b82f6; font-size: 18px; font-weight: 600; margin-bottom: 8px;">
+          DentalFlow
+        </div>
+        <div style="color: #64748b; font-size: 14px;">
+          Iniciando sistema de gestión dental...
+        </div>
+        <div style="margin-top: 15px; color: #94a3b8; font-size: 12px;">
+          <span id="loading-dots">.</span>
+        </div>
+      </div>
+      
+      <script>
+        // Animación de puntos de carga
+        const dots = document.getElementById('loading-dots');
+        let dotsCount = 1;
+        setInterval(function() {
+          dots.textContent = '.'.repeat(dotsCount);
+          dotsCount = dotsCount % 3 + 1;
+        }, 500);
+      </script>
+    </div>
+    
+    <!-- ==================== CONTENEDOR PRINCIPAL REACT ==================== -->
+    <noscript>
+      <div style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: #f8fafc;
+        padding: 20px;
+        text-align: center;
+        z-index: 10000;
+      ">
+        <div style="max-width: 500px;">
+          <div style="font-size: 48px; margin-bottom: 20px; color: #3b82f6;">🦷</div>
+          <h2 style="color: #1e293b; margin-bottom: 16px;">
+            JavaScript requerido
+          </h2>
+          <p style="color: #64748b; margin-bottom: 24px; line-height: 1.6;">
+            Para usar DentalFlow, necesitas habilitar JavaScript en tu navegador.
+            Esta es una aplicación web moderna que requiere JavaScript para funcionar correctamente.
+          </p>
+          <div style="
+            background: #f1f5f9;
+            padding: 16px;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+            text-align: left;
+          ">
+            <p style="margin: 0; color: #475569; font-size: 14px;">
+              <strong>¿Cómo habilitar JavaScript?</strong><br>
+              1. Ve a la configuración de tu navegador<br>
+              2. Busca "Configuración de contenido" o "Privacidad y seguridad"<br>
+              3. Asegúrate de que JavaScript esté habilitado<br>
+              4. Recarga esta página
+            </p>
+          </div>
+        </div>
+      </div>
+    </noscript>
+    
     <div id="root"></div>
+    
+    <!-- ==================== SCRIPT PARA WEB VITALS ==================== -->
+    <script>
+      // Capturar métricas de performance
+      if (window.performance && window.performance.mark) {
+        window.performance.mark('index-html-loaded');
+      }
+      
+      // Medir tiempo hasta interactivo
+      window.addEventListener('DOMContentLoaded', function() {
+        if (window.performance && window.performance.mark) {
+          window.performance.mark('dom-content-loaded');
+        }
+      });
+      
+      // Enviar métricas cuando la app esté lista
+      window.addEventListener('appReady', function() {
+        if (window.performance && window.performance.measure) {
+          window.performance.measure('appStartup', 'index-html-loaded', 'dom-content-loaded');
+          const measures = window.performance.getEntriesByName('appStartup');
+          if (measures.length > 0) {
+            console.log('🚀 Tiempo de inicio de la app:', measures[0].duration.toFixed(2), 'ms');
+          }
+        }
+      });
+    </script>
+    
     <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
+      Este archivo HTML es una plantilla.
+      Si lo abres directamente en el navegador, verás una página en blanco.
+      
+      Puedes agregar webfonts, meta tags o analytics a este archivo.
+      El paso de construcción colocará los scripts empaquetados dentro de la etiqueta <body>.
+      
+      Para comenzar el desarrollo, ejecuta `npm start` o `yarn start`.
+      Para crear un bundle de producción, usa `npm run build` o `yarn build`.
     -->
   </body>
 </html>
