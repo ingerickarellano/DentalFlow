@@ -488,19 +488,19 @@ const LandingPage: React.FC = () => {
   // NUEVA SECCIÓN: Testimonios
   const testimonials = [
     {
-      quote: 'Pasamos de planillas Excel a DentalFlow y nuestra productividad aumentó un 40%. Lo mejor: pagamos menos de lo que gastábamos en café.',
+      quote: 'Pasamos de planillas Excel y Word a DentalFlow, ahora nuestra productividad aumentó un 40%. Lo mejor es que pagamos menos de lo que gastámos en café.',
       name: 'Carlos Muñoz',
       role: 'Director, Laboratorio Dental Muñoz',
       initials: 'CM'
     },
     {
-      quote: 'Buscábamos un software accesible, no soluciones de USD 100 mensuales. DentalFlow nos dio todo lo que necesitamos a un precio justo.',
+      quote: 'Buscábamos un software accesible, no programas de USD 100 mensuales. DentalFlow nos dio todo lo que necesitamos a un precio justo.',
       name: 'María José Fernández',
       role: 'Administradora, Tecnodent',
       initials: 'MJ'
     },
     {
-      quote: 'La atención personalizada y el soporte rápido marcan la diferencia. Y por $8.000, ni lo pienses.',
+      quote: 'La atención personalizada para agregar nuestros aranceles, el soporte rápido y la buena voluntad, marcan la diferencia. Y por $8.000, ni lo pienses.',
       name: 'Rodrigo Soto',
       role: 'Dueño, Soto Dental Lab',
       initials: 'RS'
@@ -850,12 +850,12 @@ const LandingPage: React.FC = () => {
                 borderRadius: '0.5rem',
                 border: '1px solid #e2e8f0'
               }}>
-                <p><strong>Banco:</strong> Banco de Chile</p>
-                <p><strong>Tipo de cuenta:</strong> Cuenta Corriente</p>
-                <p><strong>Número:</strong> 123-45678-9</p>
-                <p><strong>RUT:</strong> 12.345.678-9</p>
+                <p><strong>Banco:</strong> Banco Estado</p>
+                <p><strong>Tipo de cuenta:</strong> Cuenta Vista</p>
+                <p><strong>Número:</strong> 27570230820</p>
+                <p><strong>RUT:</strong> 76.341.872-3</p>
                 <p><strong>Razón Social:</strong> DentalFlow SpA</p>
-                <p><strong>Email para aviso:</strong> transferencias@dentalflow.com</p>
+                <p><strong>Email para aviso:</strong> DentalflowM@gmail.com</p>
                 <p><strong>Monto:</strong> 
                   {selectedPlan === 'profesional' ? ' $8.000 CLP/mes' : 
                    selectedPlan === 'empresarial' ? ' $16.000 CLP/mes' : ' $0'}
@@ -924,8 +924,8 @@ const LandingPage: React.FC = () => {
       <section style={styles.ctaSection} id="contact">
         <h2 style={styles.ctaTitle}>¿Listo para transformar tu laboratorio?</h2>
         <p style={styles.ctaSubtitle}>
-          Únete a los laboratorios que ya están ahorrando miles de pesos al mes 
-          con la mejor tecnología a precio justo.
+          Únete a los laboratorios que ya están ahorrando al mes 
+          con la mejor tecnología a un precio justo.
         </p>
         
         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -950,7 +950,7 @@ const LandingPage: React.FC = () => {
         </div>
         
         <p style={{ marginTop: '2rem', opacity: 0.8, fontSize: '0.95rem' }}>
-          O contáctanos directamente: <strong>contacto@dentalflow.com</strong>
+          O contáctanos directamente: <strong>DentalflowM@gmail.com</strong>
         </p>
         <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', opacity: 0.7 }}>
           📢 Pregunta por nuestro descuento por pago anual (2 meses gratis)
@@ -1008,7 +1008,7 @@ const LandingPage: React.FC = () => {
             © {new Date().getFullYear()} DentalFlow. Todos los derechos reservados.
           </p>
           <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-            contact@dentalflow.com | Soporte: +56 9 84201 462
+            DentalflowM@gmail.com | Soporte: +56 9 84201 462
           </p>
         </div>
       </footer>
