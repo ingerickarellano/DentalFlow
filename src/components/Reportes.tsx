@@ -1,6 +1,7 @@
+// Reportes.tsx
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import Header from './Header'; // Importar el Header
+import Header from './Header';
 
 interface ReportesProps {
   onBack: () => void;
@@ -15,7 +16,6 @@ interface FiltrosReporte {
   año: string;
 }
 
-// Interfaces para los datos reales de Supabase
 interface Trabajo {
   id: string;
   paciente: string;
@@ -31,7 +31,7 @@ interface Trabajo {
     nota_especial?: string;
   }>;
   precio_total: number;
-  estado: string;
+  estado: 'pendiente' | 'produccion' | 'terminado' | 'entregado';
   fecha_recibido: string;
   fecha_entrega_estimada: string;
   notas: string;
@@ -76,7 +76,6 @@ interface User {
   telefono?: string;
 }
 
-// Definir tipo para los estilos
 type Styles = {
   [key: string]: React.CSSProperties;
 };
@@ -96,10 +95,13 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
   const [configuracionLaboratorio, setConfiguracionLaboratorio] = useState<ConfiguracionLaboratorio | null>(null);
   const [cargando, setCargando] = useState(false);
   const [actualizandoEstado, setActualizandoEstado] = useState<string | null>(null);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
   const [usuario, setUsuario] = useState<User | null>(null);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
-  // Cargar datos desde Supabase
+  // Estado para la acción masiva
+  const [estadoMasivo, setEstadoMasivo] = useState<Trabajo['estado']>('entregado');
+
   useEffect(() => {
     cargarDatos();
   }, []);
@@ -113,7 +115,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
         return;
       }
 
-      // Cargar información del usuario desde la tabla perfiles
       const { data: userData } = await supabase
         .from('perfiles')
         .select('*')
@@ -134,12 +135,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
         });
       }
 
-      // Cargar todos los datos en paralelo
-      const [
-        trabajosRes, 
-        clinicasRes,
-        configuracionRes
-      ] = await Promise.all([
+      const [trabajosRes, clinicasRes, configuracionRes] = await Promise.all([
         supabase
           .from('trabajos')
           .select('*')
@@ -152,16 +148,12 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       if (trabajosRes.error) throw trabajosRes.error;
       if (clinicasRes.error) throw clinicasRes.error;
 
-      console.log('Trabajos cargados:', trabajosRes.data?.length || 0);
-      
       setTrabajos(trabajosRes.data || []);
       setClinicas(clinicasRes.data || []);
-      
-      // Cargar configuración del laboratorio
+
       if (configuracionRes.data) {
         setConfiguracionLaboratorio(configuracionRes.data);
       } else {
-        // Configuración por defecto si no existe
         setConfiguracionLaboratorio({
           nombre_laboratorio: 'Laboratorio Dental Pro',
           rut: '76.123.456-7',
@@ -174,7 +166,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
           usuario_id: user.id
         });
       }
-
     } catch (error: any) {
       console.error('Error cargando datos:', error);
       alert(`Error al cargar los datos: ${error.message}`);
@@ -183,7 +174,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     }
   };
 
-  // Función para manejar logout
   const handleLogout = async () => {
     try {
       setCerrandoSesion(true);
@@ -196,7 +186,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     }
   };
 
-  // Función para calcular montos con impuestos (usando useCallback para memoizar)
   const calcularMontosConImpuesto = useCallback((montoBruto: number) => {
     if (!configuracionLaboratorio) {
       return {
@@ -210,10 +199,10 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
 
     const porcentaje = configuracionLaboratorio.porcentaje_impuesto;
     const montoImpuesto = (montoBruto * porcentaje) / 100;
-    const montoNeto = configuracionLaboratorio.tipo_impuesto === 'iva' 
-      ? montoBruto + montoImpuesto  // IVA se suma
-      : montoBruto - montoImpuesto; // Honorarios se resta
-    
+    const montoNeto = configuracionLaboratorio.tipo_impuesto === 'iva'
+      ? montoBruto + montoImpuesto
+      : montoBruto - montoImpuesto;
+
     return {
       bruto: montoBruto,
       impuesto: montoImpuesto,
@@ -223,7 +212,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     };
   }, [configuracionLaboratorio]);
 
-  // Función para actualizar estado de trabajo
   const actualizarEstadoTrabajo = async (trabajoId: string, nuevoEstado: string) => {
     try {
       setActualizandoEstado(trabajoId);
@@ -234,9 +222,8 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
 
       if (error) throw error;
 
-      // Actualizar estado local
-      setTrabajos(prev => prev.map(t => 
-        t.id === trabajoId ? { ...t, estado: nuevoEstado } : t
+      setTrabajos(prev => prev.map(t =>
+        t.id === trabajoId ? { ...t, estado: nuevoEstado as Trabajo['estado'] } : t
       ));
 
       alert('✅ Estado actualizado correctamente');
@@ -248,7 +235,39 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     }
   };
 
-  // Calcular fechas basadas en el periodo seleccionado
+  // Función para actualizar todos los trabajos filtrados a un estado elegido
+  const actualizarTodosEstado = async () => {
+    if (trabajosFiltrados.length === 0) {
+      alert('No hay trabajos en los filtros actuales.');
+      return;
+    }
+
+    const count = trabajosFiltrados.length;
+    const estadoTexto = obtenerTextoEstado(estadoMasivo);
+    if (!window.confirm(`¿Estás seguro de marcar TODOS los ${count} trabajos filtrados como "${estadoTexto}"? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      setBulkUpdating(true);
+      const ids = trabajosFiltrados.map(t => t.id);
+      const { error } = await supabase
+        .from('trabajos')
+        .update({ estado: estadoMasivo })
+        .in('id', ids);
+
+      if (error) throw error;
+
+      setTrabajos(prev => prev.map(t => ids.includes(t.id) ? { ...t, estado: estadoMasivo } : t));
+      alert(`✅ ${count} trabajos marcados como "${estadoTexto}".`);
+    } catch (error: any) {
+      console.error('Error actualizando estado masivo:', error);
+      alert(`❌ Error: ${error.message}`);
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
+
   const calcularFechasPorPeriodo = (periodo: string, mes?: string, año?: string) => {
     const hoy = new Date();
     let fechaInicio = new Date();
@@ -286,7 +305,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
   };
 
   const handleFiltroChange = (
-    campo: keyof FiltrosReporte, 
+    campo: keyof FiltrosReporte,
     valor: string
   ) => {
     if (campo === 'periodo' && valor !== 'personalizado') {
@@ -302,16 +321,16 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
         ...filtros,
         [campo]: valor
       };
-      
+
       if (filtros.periodo === 'mes' || filtros.periodo === 'año') {
-        const fechas = calcularFechasPorPeriodo(filtros.periodo, 
-          campo === 'mes' ? valor : nuevoFiltros.mes, 
+        const fechas = calcularFechasPorPeriodo(filtros.periodo,
+          campo === 'mes' ? valor : nuevoFiltros.mes,
           campo === 'año' ? valor : nuevoFiltros.año
         );
         nuevoFiltros.fechaInicio = fechas.inicio;
         nuevoFiltros.fechaFin = fechas.fin;
       }
-      
+
       setFiltros(nuevoFiltros);
     } else {
       setFiltros(prev => ({
@@ -326,16 +345,13 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     handleFiltroChange(name as keyof FiltrosReporte, value);
   };
 
-  // Aplicar filtros a los trabajos
   const trabajosFiltrados = useMemo(() => {
     let filtrados = [...trabajos];
 
-    // Filtrar por clínica
     if (filtros.clinicaId !== 'todos') {
       filtrados = filtrados.filter(t => t.clinica_id === filtros.clinicaId);
     }
 
-    // Filtrar por fecha (usamos fecha_recibido que es el campo real)
     filtrados = filtrados.filter(t => {
       const fechaTrabajo = new Date(t.fecha_recibido);
       const fechaInicio = new Date(filtros.fechaInicio);
@@ -346,17 +362,15 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     return filtrados;
   }, [filtros, trabajos]);
 
-  // Calcular estadísticas generales
   const estadisticas = useMemo(() => {
     const totalTrabajos = trabajosFiltrados.length;
     const totalIngresos = trabajosFiltrados.reduce((sum, t) => sum + t.precio_total, 0);
     const montos = calcularMontosConImpuesto(totalIngresos);
-    
-    // Contar total de prestaciones (suma de cantidad de servicios en todos los trabajos)
-    const totalPrestaciones = trabajosFiltrados.reduce((sum, t) => 
+
+    const totalPrestaciones = trabajosFiltrados.reduce((sum, t) =>
       sum + t.servicios.reduce((servSum, s) => servSum + s.cantidad, 0), 0
     );
-    
+
     return {
       totalTrabajos,
       totalPrestaciones,
@@ -365,7 +379,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     };
   }, [trabajosFiltrados, calcularMontosConImpuesto]);
 
-  // Obtener nombre del mes
   const obtenerNombreMes = (mes: string) => {
     const meses = [
       'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -380,374 +393,282 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       : null;
 
     const ventana = window.open('', '_blank');
-    if (ventana) {
-      ventana.document.write(`
-        <html>
-          <head>
-           <title>Reporte ${clinicaSeleccionada ? clinicaSeleccionada.nombre : 'Todas las Clínicas'} - ${new Date().toLocaleDateString()}</title>
-            <style>
-              @page {
-                margin: 1cm;
-                size: A4 portrait;
-              }
-              body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                margin: 0;
-                padding: 0;
-                color: #333;
-                font-size: 12px;
-                line-height: 1.4;
-              }
-              .container {
-                max-width: 100%;
-                margin: 0 auto;
-              }
-              .header {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-start;
-                margin-bottom: 20px;
-                padding-bottom: 15px;
-                border-bottom: 2px solid #2563eb;
-              }
-              .logo-section {
-                flex: 1;
-                text-align: left;
-              }
-              .logo {
-                max-width: 120px;
-                max-height: 80px;
-                margin-bottom: 10px;
-              }
-              .info-section {
-                flex: 2;
-                text-align: right;
-              }
-              .header h1 {
-                color: #2563eb;
-                margin: 0 0 10px 0;
-                font-size: 20px;
-                font-weight: bold;
-              }
-              .header h2 {
-                margin: 0 0 12px 0;
-                font-size: 16px;
-                color: #1e293b;
-                font-weight: 600;
-              }
-              .lab-info {
-                font-size: 11px;
-                color: #64748b;
-                margin: 3px 0;
-                line-height: 1.3;
-              }
-              .report-info {
-                background: #f8fafc;
-                padding: 12px;
-                border-radius: 6px;
-                margin: 12px 0;
-                border: 1px solid #e2e8f0;
-                font-size: 11px;
-                line-height: 1.5;
-              }
-              .table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 15px 0;
-                font-size: 11px;
-                page-break-inside: avoid;
-              }
-              .table th, .table td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                text-align: left;
-                word-wrap: break-word;
-              }
-              .table th {
-                background-color: #f1f5f9;
-                font-weight: bold;
-                font-size: 12px;
-                padding: 10px 8px;
-              }
-              .table td {
-                font-size: 11px;
-                vertical-align: top;
-              }
-              .totales {
-                margin-top: 20px;
-                padding: 15px;
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                border-radius: 6px;
-                page-break-inside: avoid;
-              }
-              .total-row {
-                display: flex;
-                justify-content: space-between;
-                margin: 8px 0;
-                font-size: 13px;
-              }
-              .total-final {
-                font-weight: bold;
-                font-size: 14px;
-                border-top: 2px solid #cbd5e1;
-                padding-top: 10px;
-                margin-top: 10px;
-                color: #059669;
-              }
-              .section-title {
-                background: #e2e8f0;
-                padding: 10px;
-                border-radius: 6px;
-                font-weight: bold;
-                margin: 15px 0 10px 0;
-                font-size: 14px;
-              }
-              .servicios-container {
-                max-height: 200px;
-                overflow-y: auto;
-                margin: 5px 0;
-                padding: 5px;
-                background: #f8fafc;
-                border-radius: 4px;
-                border: 1px solid #e5e7eb;
-              }
-              .servicio-item {
-                margin: 3px 0;
-                padding: 2px 0;
-                font-size: 10px;
-                line-height: 1.3;
-                border-bottom: 1px dotted #e5e7eb;
-                padding-bottom: 3px;
-              }
-              .servicio-item:last-child {
-                border-bottom: none;
-              }
-              .servicio-info {
-                display: flex;
-                justify-content: space-between;
-              }
-              .servicio-nombre {
-                flex: 2;
-              }
-              .servicio-detalles {
-                flex: 1;
-                text-align: right;
-                color: #6b7280;
-              }
-              .estado-badge {
-                display: inline-block;
-                padding: 3px 8px;
-                border-radius: 4px;
-                font-size: 10px;
-                font-weight: 500;
-              }
-              .estado-pendiente { background: #fef3c7; color: #92400e; }
-              .estado-produccion { background: #dbeafe; color: #1e40af; }
-              .estado-terminado { background: #d1fae5; color: #065f46; }
-              .estado-entregado { background: #e5e7eb; color: #374151; }
-              .nota-especial {
-                font-size: 9px;
-                color: #f59e0b;
-                font-style: italic;
-                margin-top: 2px;
-              }
-              .footer {
-                margin-top: 20px;
-                font-size: 10px;
-                color: #64748b;
-                text-align: center;
-                border-top: 1px solid #e2e8f0;
-                padding-top: 10px;
-              }
-              @media print {
-                body {
-                  margin: 0.5cm;
-                  font-size: 11px;
-                }
-                .no-print {
-                  display: none;
-                }
-                .container {
-                  width: 100%;
-                }
-                .table {
-                  font-size: 10px;
-                }
-                .table th, .table td {
-                  padding: 6px;
-                }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <!-- Encabezado con información del laboratorio -->
-              <div class="header">
-                <div class="logo-section">
-                  ${
-                    configuracionLaboratorio?.logo
-                      ? `<img src="${configuracionLaboratorio.logo}" class="logo" alt="Logo">`
-                      : '<div style="font-size: 32px; color: #2563eb;">🦷</div>'
-                  }
-                  <div class="lab-info">
-                    <strong>${configuracionLaboratorio?.nombre_laboratorio || 'Laboratorio Dental'}</strong><br>
-                    ${configuracionLaboratorio?.rut || ''}<br>
-                    ${configuracionLaboratorio?.direccion || ''}<br>
-                    ${configuracionLaboratorio?.telefono || ''}<br>
-                    ${configuracionLaboratorio?.email || ''}
-                  </div>
-                </div>
-                <div class="info-section">
-                  <h1>INFORME DE PRESTACIONES DENTALES</h1>
-                  <h2>${clinicaSeleccionada ? `CLÍNICA: ${clinicaSeleccionada.nombre.toUpperCase()}` : 'TODAS LAS CLÍNICAS'}</h2>
-                  <div class="report-info">
-                    <strong>Período:</strong> ${
-                      filtros.periodo === 'mes'
-                        ? `${obtenerNombreMes(filtros.mes)} ${filtros.año}`
-                        : `${filtros.fechaInicio} a ${filtros.fechaFin}`
-                    }<br>
-                    <strong>Generado:</strong> ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}<br>
-                    <strong>Régimen:</strong> ${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Honorarios'} (${
-                      configuracionLaboratorio?.porcentaje_impuesto
-                    }%)<br>
-                    <strong>Total Trabajos:</strong> ${estadisticas.totalTrabajos} | <strong>Total Prestaciones:</strong> ${estadisticas.totalPrestaciones}
-                  </div>
-                </div>
-              </div>
+    if (!ventana) {
+      alert('El navegador bloqueó la ventana emergente. Permite ventanas emergentes e intenta de nuevo.');
+      return;
+    }
 
-              <div class="section-title">DETALLES DE TRABAJOS - TOTAL: ${trabajosFiltrados.length} TRABAJOS</div>
-
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th style="width: 15%">Paciente</th>
-                    <th style="width: 15%">Clínica</th>
-                    <th style="width: 30%">PRESTACIONES (${estadisticas.totalPrestaciones})</th>
-                    <th style="width: 8%">Estado</th>
-                    <th style="width: 10%">Precio Bruto</th>
-                    <th style="width: 10%">${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'}</th>
-                    <th style="width: 12%">${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'Total con IVA' : 'Total Neto'}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${trabajosFiltrados
-                    .map((trabajo) => {
-                      const clinica = clinicas.find((c) => c.id === trabajo.clinica_id);
-                      const serviciosHTML = trabajo.servicios
-                        .map((s, idx) => `
-                          <div class="servicio-item">
-                            <div class="servicio-info">
-                              <div class="servicio-nombre">
-                                <strong>${s.nombre || 'Servicio'}</strong>
-                              </div>
-                              <div class="servicio-detalles">
-                                x${s.cantidad} | $${s.precio.toLocaleString()}
-                              </div>
-                            </div>
-                            ${s.pieza_dental ? `<div style="font-size: 9px; color: #6b7280;">Pieza: ${s.pieza_dental}</div>` : ''}
-                            ${s.nota_especial ? `<div class="nota-especial">📝 ${s.nota_especial}</div>` : ''}
-                          </div>
-                        `).join('');
-
-                      const montos = calcularMontosConImpuesto(trabajo.precio_total);
-
-                      // Determinar clase CSS para el estado
-                      let estadoClass = 'estado-badge ';
-                      switch (trabajo.estado) {
-                        case 'pendiente':
-                          estadoClass += 'estado-pendiente';
-                          break;
-                        case 'produccion':
-                          estadoClass += 'estado-produccion';
-                          break;
-                        case 'terminado':
-                          estadoClass += 'estado-terminado';
-                          break;
-                        case 'entregado':
-                          estadoClass += 'estado-entregado';
-                          break;
-                        default:
-                          estadoClass += 'estado-pendiente';
-                      }
-
-                      return `
-                        <tr>
-                          <td style="font-weight: 500;">${trabajo.paciente}</td>
-                          <td>${clinica?.nombre || 'N/A'}</td>
-                          <td>
-                            <div class="servicios-container">
-                              ${serviciosHTML}
-                            </div>
-                          </td>
-                          <td><span class="${estadoClass}">${obtenerTextoEstado(trabajo.estado)}</span></td>
-                          <td>$${trabajo.precio_total.toLocaleString('es-CL')}</td>
-                          <td>$${montos.impuesto.toLocaleString('es-CL')}</td>
-                          <td style="font-weight: bold; color: #059669;">$${montos.neto.toLocaleString('es-CL')}</td>
-                        </tr>
-                      `;
-                    })
-                    .join('')}
-                </tbody>
-              </table>
-
-              <div class="totales">
-                <div class="section-title">RESUMEN GENERAL DEL PERÍODO</div>
-                <div class="total-row">
-                  <span>Total de Trabajos:</span>
-                  <span>${estadisticas.totalTrabajos}</span>
-                </div>
-                <div class="total-row">
-                  <span>Total de Prestaciones:</span>
-                  <span>${estadisticas.totalPrestaciones}</span>
-                </div>
-                <div class="total-row">
-                  <span>Total Bruto:</span>
-                  <span>$${estadisticas.totalIngresos.toLocaleString('es-CL')}</span>
-                </div>
-                <div class="total-row">
-                  <span>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} (${
-                    configuracionLaboratorio?.porcentaje_impuesto
-                  }%):</span>
-                  <span>$${estadisticas.impuesto.toLocaleString('es-CL')}</span>
-                </div>
-                <div class="total-row total-final">
-                  <span>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'TOTAL CON IVA:' : 'TOTAL NETO A PAGAR:'}</span>
-                  <span style="font-size: 16px;">$${estadisticas.neto.toLocaleString('es-CL')}</span>
-                </div>
-              </div>
-
-              <div class="footer">
-                Documento generado automáticamente - ${new Date().toLocaleDateString()}
-              </div>
-
-              <div class="no-print" style="margin-top: 25px; text-align: center; padding: 20px;">
-                <button onclick="window.print()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin: 8px; font-size: 14px; font-weight: 500;">
-                  🖨️ Imprimir Reporte
-                </button>
-                <button onclick="window.close()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer; margin: 8px; font-size: 14px; font-weight: 500;">
-                  ❌ Cerrar
-                </button>
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Reporte ${clinicaSeleccionada ? clinicaSeleccionada.nombre : 'Todas las Clínicas'} - ${new Date().toLocaleDateString()}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body {
+            font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #f8fafc;
+            padding: 15px;
+            color: #1e293b;
+            line-height: 1.4;
+          }
+          .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 20px;
+          }
+          .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #2563eb;
+          }
+          .left { flex: 1; }
+          .right { flex: 1; text-align: right; }
+          .logo { max-width: 100px; max-height: 60px; object-fit: contain; margin-bottom: 5px; }
+          .lab-info { font-size: 11px; color: #475569; line-height: 1.4; }
+          .lab-info strong { color: #1e293b; font-size: 13px; }
+          .title-section h1 { color: #2563eb; font-size: 20px; font-weight: 700; margin: 0 0 5px 0; }
+          .title-section h2 { color: #1e293b; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; }
+          .report-info {
+            background-color: #f0f9ff;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #bae6fd;
+            font-size: 11px;
+            text-align: right;
+            display: inline-block;
+          }
+          .report-info p { margin: 2px 0; }
+          .tabla-trabajos {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 11px;
+          }
+          .tabla-trabajos th {
+            background-color: #f1f5f9;
+            color: #1e293b;
+            font-weight: 600;
+            padding: 8px 6px;
+            text-align: left;
+            border: 1px solid #e2e8f0;
+          }
+          .tabla-trabajos td {
+            padding: 8px 6px;
+            border: 1px solid #e2e8f0;
+            vertical-align: top;
+          }
+          .servicios-list { margin: 0; padding: 0; list-style: none; }
+          .servicio-item {
+            padding: 3px 0;
+            border-bottom: 1px dashed #e2e8f0;
+          }
+          .servicio-item:last-child { border-bottom: none; }
+          .servicio-nombre { font-weight: 500; font-size: 10px; }
+          .servicio-detalle { font-size: 9px; color: #64748b; }
+          .nota-especial { font-size: 8px; color: #f59e0b; font-style: italic; }
+          .estado-badge {
+            display: inline-block;
+            padding: 3px 6px;
+            border-radius: 20px;
+            font-size: 9px;
+            font-weight: 600;
+            text-align: center;
+            min-width: 60px;
+          }
+          .estado-pendiente { background-color: #fef3c7; color: #92400e; }
+          .estado-produccion { background-color: #dbeafe; color: #1e40af; }
+          .estado-terminado { background-color: #d1fae5; color: #065f46; }
+          .estado-entregado { background-color: #e5e7eb; color: #374151; }
+          .totales {
+            margin-top: 15px;
+            padding: 12px;
+            background-color: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            font-size: 12px;
+          }
+          .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+          }
+          .total-final {
+            font-weight: 700;
+            font-size: 14px;
+            border-top: 2px solid #2563eb;
+            padding-top: 8px;
+            margin-top: 8px;
+            color: #2563eb;
+          }
+          .footer {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 9px;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 8px;
+          }
+          .no-print { margin-top: 15px; text-align: center; }
+          .btn-print {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 50px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 8px;
+          }
+          .btn-close {
+            background-color: #64748b;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 50px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+          }
+          @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; padding: 5px; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="left">
+              ${
+                configuracionLaboratorio?.logo
+                  ? `<img src="${configuracionLaboratorio.logo}" class="logo" alt="Logo">`
+                  : '<div style="font-size: 36px; color: #2563eb;">🦷</div>'
+              }
+              <div class="lab-info">
+                <strong>${configuracionLaboratorio?.nombre_laboratorio || 'Laboratorio Dental'}</strong><br>
+                ${configuracionLaboratorio?.rut || ''}<br>
+                ${configuracionLaboratorio?.direccion || ''}<br>
+                ${configuracionLaboratorio?.telefono || ''}<br>
+                ${configuracionLaboratorio?.email || ''}
               </div>
             </div>
-          </body>
-        </html>
-      `);
-      ventana.document.close();
-    }
+            <div class="right">
+              <div class="title-section">
+                <h1>INFORME DE PRESTACIONES DENTALES</h1>
+                <h2>${clinicaSeleccionada ? `CLÍNICA: ${clinicaSeleccionada.nombre.toUpperCase()}` : 'TODAS LAS CLÍNICAS'}</h2>
+              </div>
+              <div class="report-info">
+                <p><strong>Período:</strong> ${
+                  filtros.periodo === 'mes'
+                    ? `${obtenerNombreMes(filtros.mes)} ${filtros.año}`
+                    : `${filtros.fechaInicio} a ${filtros.fechaFin}`
+                }</p>
+                <p><strong>Generado:</strong> ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+                <p><strong>Régimen:</strong> ${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Honorarios'} (${configuracionLaboratorio?.porcentaje_impuesto}%)</p>
+                <p><strong>Total Trabajos:</strong> ${estadisticas.totalTrabajos} | <strong>Prestaciones:</strong> ${estadisticas.totalPrestaciones}</p>
+              </div>
+            </div>
+          </div>
+
+          <table class="tabla-trabajos">
+            <thead>
+              <tr>
+                <th>Paciente</th>
+                <th>Servicios</th>
+                <th>Estado</th>
+                <th>Bruto</th>
+                <th>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'}</th>
+                <th>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'Total con IVA' : 'Total Neto'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${trabajosFiltrados.map(trabajo => {
+                const clinica = clinicas.find(c => c.id === trabajo.clinica_id);
+                const montos = calcularMontosConImpuesto(trabajo.precio_total);
+                const estadoClass = `estado-badge estado-${trabajo.estado}`;
+
+                const serviciosHTML = trabajo.servicios.map(s => `
+                  <div class="servicio-item">
+                    <div class="servicio-nombre">${s.nombre || 'Servicio'}</div>
+                    <div class="servicio-detalle">
+                      x${s.cantidad} ${s.pieza_dental ? `| Pieza: ${s.pieza_dental}` : ''}
+                    </div>
+                    ${s.nota_especial ? `<div class="nota-especial">📝 ${s.nota_especial}</div>` : ''}
+                  </div>
+                `).join('');
+
+                return `
+                  <tr>
+                    <td><strong>${trabajo.paciente}</strong></td>
+                    <td><div class="servicios-list">${serviciosHTML}</div></td>
+                    <td><span class="${estadoClass}">${obtenerTextoEstado(trabajo.estado)}</span></td>
+                    <td>$${trabajo.precio_total.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                    <td>$${montos.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</td>
+                    <td><strong style="color: #10b981;">$${montos.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</strong></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <div class="totales">
+            <div class="total-row">
+              <span>Total de Trabajos:</span>
+              <span><strong>${estadisticas.totalTrabajos}</strong></span>
+            </div>
+            <div class="total-row">
+              <span>Total de Prestaciones:</span>
+              <span><strong>${estadisticas.totalPrestaciones}</strong></span>
+            </div>
+            <div class="total-row">
+              <span>Total Bruto:</span>
+              <span><strong>$${estadisticas.totalIngresos.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</strong></span>
+            </div>
+            <div class="total-row">
+              <span>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} (${configuracionLaboratorio?.porcentaje_impuesto}%):</span>
+              <span><strong>$${estadisticas.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</strong></span>
+            </div>
+            <div class="total-row total-final">
+              <span>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'TOTAL CON IVA' : 'TOTAL NETO A PAGAR'}:</span>
+              <span>$${estadisticas.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+            </div>
+          </div>
+
+          <div class="footer">
+            Documento generado automáticamente por DentalFlow Manager - ${new Date().toLocaleDateString()}
+          </div>
+
+          <div class="no-print">
+            <button class="btn-print" onclick="window.print()">🖨️ Imprimir Reporte</button>
+            <button class="btn-close" onclick="window.close()">❌ Cerrar</button>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    ventana.document.write(htmlContent);
+    ventana.document.close();
   };
 
   const exportarExcel = () => {
     const headers = ['Paciente', 'Clínica', 'Servicios', 'Estado', 'Precio Bruto', 'Precio Neto', 'Impuesto', 'Fecha Recibido', 'Prestaciones Totales'];
-    
-    // Para cada trabajo, creamos una fila por cada prestación para mayor detalle
+
     const filas: string[] = [];
-    
+
     trabajosFiltrados.forEach(trabajo => {
       const clinica = clinicas.find(c => c.id === trabajo.clinica_id)?.nombre || 'N/A';
       const montos = calcularMontosConImpuesto(trabajo.precio_total);
-      
-      // Fila resumen del trabajo
+
       filas.push([
         `"${trabajo.paciente}"`,
         `"${clinica}"`,
@@ -759,8 +680,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
         trabajo.fecha_recibido,
         trabajo.servicios.reduce((sum, s) => sum + s.cantidad, 0)
       ].join(','));
-      
-      // Filas detalladas para cada prestación
+
       trabajo.servicios.forEach(servicio => {
         filas.push([
           `"${trabajo.paciente}"`,
@@ -774,11 +694,10 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
           servicio.cantidad
         ].join(','));
       });
-      
-      // Línea separadora
+
       filas.push('');
     });
-    
+
     const csvContent = [
       headers.join(','),
       ...filas
@@ -788,9 +707,9 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    
+
     const nombreArchivo = `prestaciones-${filtros.clinicaId !== 'todos' ? clinicas.find(c => c.id === filtros.clinicaId)?.nombre : 'todas-clinicas'}-${filtros.mes}-${filtros.año}.csv`;
-    
+
     link.setAttribute('download', nombreArchivo);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
@@ -827,12 +746,11 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     }
   };
 
-  // Estilos mejorados y simplificados
   const styles: Styles = {
     container: {
       padding: '20px',
       backgroundColor: '#f8fafc',
-      minHeight: 'calc(100vh - 64px)', // Ajustado para el Header
+      minHeight: 'calc(100vh - 64px)',
       maxWidth: '1400px',
       margin: '0 auto'
     },
@@ -881,6 +799,15 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     },
     buttonWarning: {
       backgroundColor: '#f59e0b',
+      color: 'white',
+      padding: '0.5rem 1rem',
+      border: 'none',
+      borderRadius: '0.375rem',
+      cursor: 'pointer',
+      fontSize: '0.875rem'
+    },
+    buttonDanger: {
+      backgroundColor: '#dc2626',
       color: 'white',
       padding: '0.5rem 1rem',
       border: 'none',
@@ -1014,7 +941,8 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       display: 'flex',
       gap: '1rem',
       marginTop: '1rem',
-      flexWrap: 'wrap'
+      flexWrap: 'wrap',
+      alignItems: 'center'
     },
     serviciosContainer: {
       maxHeight: '150px',
@@ -1057,7 +985,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     return index % 2 === 0 ? styles.trPar : styles.trNormal;
   };
 
-  // Generar opciones de meses y años
   const meses = [
     { valor: '1', nombre: 'Enero' }, { valor: '2', nombre: 'Febrero' },
     { valor: '3', nombre: 'Marzo' }, { valor: '4', nombre: 'Abril' },
@@ -1067,14 +994,14 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     { valor: '11', nombre: 'Noviembre' }, { valor: '12', nombre: 'Diciembre' }
   ];
 
-  const años = Array.from({ length: 5 }, (_, i) => 
+  const años = Array.from({ length: 5 }, (_, i) =>
     (new Date().getFullYear() - i).toString()
   );
 
   if (cargando) {
     return (
       <>
-        <Header 
+        <Header
           user={usuario || undefined}
           onLogout={handleLogout}
           cerrandoSesion={cerrandoSesion}
@@ -1090,13 +1017,13 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     );
   }
 
-  const clinicaSeleccionada = filtros.clinicaId !== 'todos' 
+  const clinicaSeleccionada = filtros.clinicaId !== 'todos'
     ? clinicas.find(c => c.id === filtros.clinicaId)
     : null;
 
   return (
     <>
-      <Header 
+      <Header
         user={usuario || undefined}
         onLogout={handleLogout}
         cerrandoSesion={cerrandoSesion}
@@ -1110,14 +1037,13 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
           <h1 style={styles.title}>📊 Reportes de Prestaciones</h1>
         </div>
 
-        {/* Filtros */}
         <div style={styles.filtrosContainer}>
           <h3 style={{ marginBottom: '1.5rem', color: '#1e293b', fontSize: '1.125rem' }}>Configurar Reporte</h3>
-          
+
           <div style={styles.grid}>
             <div style={styles.formGroup}>
               <label style={styles.label}>Clínica</label>
-              <select 
+              <select
                 style={styles.select}
                 name="clinicaId"
                 value={filtros.clinicaId}
@@ -1132,7 +1058,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
 
             <div style={styles.formGroup}>
               <label style={styles.label}>Período</label>
-              <select 
+              <select
                 style={styles.select}
                 name="periodo"
                 value={filtros.periodo}
@@ -1148,7 +1074,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
               <>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Mes</label>
-                  <select 
+                  <select
                     style={styles.select}
                     name="mes"
                     value={filtros.mes}
@@ -1163,7 +1089,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                 </div>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Año</label>
-                  <select 
+                  <select
                     style={styles.select}
                     name="año"
                     value={filtros.año}
@@ -1180,7 +1106,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
             {filtros.periodo === 'año' && (
               <div style={styles.formGroup}>
                 <label style={styles.label}>Año</label>
-                <select 
+                <select
                   style={styles.select}
                   name="año"
                   value={filtros.año}
@@ -1226,13 +1152,32 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
             <button style={styles.buttonSuccess} onClick={exportarPDF}>
               📄 Exportar a PDF
             </button>
+            {/* Acción masiva con dropdown */}
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <select
+                value={estadoMasivo}
+                onChange={(e) => setEstadoMasivo(e.target.value as Trabajo['estado'])}
+                style={{ ...styles.select, width: 'auto', padding: '0.5rem' }}
+                disabled={bulkUpdating || trabajosFiltrados.length === 0}
+              >
+                <option value="pendiente">⏳ Pendiente</option>
+                <option value="produccion">🔧 En Producción</option>
+                <option value="terminado">✅ Terminado</option>
+                <option value="entregado">📦 Entregado</option>
+              </select>
+              <button
+                style={{ ...styles.button, backgroundColor: '#64748b' }} // gris
+                onClick={actualizarTodosEstado}
+                disabled={bulkUpdating || trabajosFiltrados.length === 0}
+              >
+                {bulkUpdating ? 'Actualizando...' : 'Aplicar a todos'}
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Resultados */}
         {trabajosFiltrados.length > 0 ? (
           <div style={styles.resultadosContainer}>
-            {/* Encabezado del Reporte */}
             <div style={styles.reporteHeader}>
               <h2 style={{ margin: '0 0 0.5rem 0', color: '#0369a1' }}>
                 PRESTACIONES DE {clinicaSeleccionada ? `LA CLÍNICA ${clinicaSeleccionada.nombre.toUpperCase()}` : 'TODAS LAS CLÍNICAS'}
@@ -1255,8 +1200,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                 <thead>
                   <tr>
                     <th style={styles.th}>Paciente</th>
-                    <th style={styles.th}>Clínica</th>
-                    <th style={{...styles.th, width: '30%'}}>Prestaciones</th>
+                    <th style={{ ...styles.th, width: '30%' }}>Prestaciones</th>
                     <th style={styles.th}>Estado</th>
                     <th style={styles.th}>Precio Bruto</th>
                     <th style={styles.th}>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} ({configuracionLaboratorio?.porcentaje_impuesto}%)</th>
@@ -1268,21 +1212,19 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                   {trabajosFiltrados.map((trabajo, index) => {
                     const clinica = clinicas.find(c => c.id === trabajo.clinica_id);
                     const montos = calcularMontosConImpuesto(trabajo.precio_total);
-                    
+
                     return (
                       <tr key={trabajo.id} style={getRowStyle(index)}>
                         <td style={styles.td}>{trabajo.paciente}</td>
-                        <td style={styles.td}>{clinica?.nombre || 'N/A'}</td>
                         <td style={styles.td}>
                           <div style={styles.serviciosContainer}>
                             {trabajo.servicios.map((servicio, idx) => (
-                              <div key={idx} style={idx === trabajo.servicios.length - 1 ? {...styles.servicioItem, ...styles.servicioItemLast} : styles.servicioItem}>
+                              <div key={idx} style={idx === trabajo.servicios.length - 1 ? { ...styles.servicioItem, ...styles.servicioItemLast } : styles.servicioItem}>
                                 <div style={styles.servicioNombre}>
                                   {servicio.nombre || 'Servicio'}
                                 </div>
                                 <div style={styles.servicioDetalles}>
                                   <span>x{servicio.cantidad} {servicio.pieza_dental && `| Pieza: ${servicio.pieza_dental}`}</span>
-                                  <span>${servicio.precio.toLocaleString()}</span>
                                 </div>
                                 {servicio.nota_especial && (
                                   <div style={styles.notaEspecial}>
@@ -1298,16 +1240,16 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                             {obtenerTextoEstado(trabajo.estado)}
                           </span>
                         </td>
-                        <td style={styles.td}>${trabajo.precio_total.toLocaleString()}</td>
-                        <td style={styles.td}>${montos.impuesto.toLocaleString()}</td>
-                        <td style={{...styles.td, color: '#10b981', fontWeight: 'bold'}}>
-                          ${montos.neto.toLocaleString()}
+                        <td style={styles.td}>${trabajo.precio_total.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                        <td style={styles.td}>${montos.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</td>
+                        <td style={{ ...styles.td, color: '#10b981', fontWeight: 'bold' }}>
+                          ${montos.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
                         <td style={styles.td}>
                           <div style={styles.acciones}>
                             {trabajo.estado === 'pendiente' && (
                               <button
-                                style={{...styles.actionButton, backgroundColor: '#10b981', color: 'white'}}
+                                style={{ ...styles.actionButton, backgroundColor: '#10b981', color: 'white' }}
                                 onClick={() => actualizarEstadoTrabajo(trabajo.id, 'produccion')}
                                 disabled={actualizandoEstado === trabajo.id}
                               >
@@ -1316,7 +1258,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                             )}
                             {trabajo.estado === 'produccion' && (
                               <button
-                                style={{...styles.actionButton, backgroundColor: '#f59e0b', color: 'white'}}
+                                style={{ ...styles.actionButton, backgroundColor: '#f59e0b', color: 'white' }}
                                 onClick={() => actualizarEstadoTrabajo(trabajo.id, 'terminado')}
                                 disabled={actualizandoEstado === trabajo.id}
                               >
@@ -1325,7 +1267,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                             )}
                             {trabajo.estado === 'terminado' && (
                               <button
-                                style={{...styles.actionButton, backgroundColor: '#3b82f6', color: 'white'}}
+                                style={{ ...styles.actionButton, backgroundColor: '#3b82f6', color: 'white' }}
                                 onClick={() => actualizarEstadoTrabajo(trabajo.id, 'entregado')}
                                 disabled={actualizandoEstado === trabajo.id}
                               >
@@ -1341,7 +1283,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
               </table>
             </div>
 
-            {/* Totales */}
             <div style={styles.totalesContainer}>
               <h3 style={styles.sectionTitle}>Resumen General</h3>
               <div style={styles.totalRow}>
@@ -1354,15 +1295,15 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
               </div>
               <div style={styles.totalRow}>
                 <span>Total Bruto:</span>
-                <span>${estadisticas.totalIngresos.toLocaleString()}</span>
+                <span>${estadisticas.totalIngresos.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
               </div>
               <div style={styles.totalRow}>
                 <span>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} ({configuracionLaboratorio?.porcentaje_impuesto}%):</span>
-                <span>${estadisticas.impuesto.toLocaleString()}</span>
+                <span>${estadisticas.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</span>
               </div>
-              <div style={{...styles.totalRow, ...styles.totalFinal}}>
+              <div style={{ ...styles.totalRow, ...styles.totalFinal }}>
                 <span>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'TOTAL CON IVA:' : 'TOTAL NETO A PAGAR:'}</span>
-                <span style={{color: '#10b981'}}>${estadisticas.neto.toLocaleString()}</span>
+                <span style={{ color: '#10b981' }}>${estadisticas.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
               </div>
             </div>
           </div>

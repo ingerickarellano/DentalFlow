@@ -7,25 +7,26 @@ const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
+  const [tipoSeleccionado, setTipoSeleccionado] = useState<'admin' | 'laboratorista' | null>(null);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     if (!email.trim() || !password) {
       setError('Por favor completa todos los campos');
       return;
     }
 
     setCargando(true);
-    
+
     try {
       console.log('🔐 Intentando login con:', email);
-      
+
       // 1. Limpiar sesión previa
       await supabase.auth.signOut();
-      
+
       // 2. Login
       const { data, error: loginError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
@@ -37,21 +38,75 @@ const Login: React.FC = () => {
       }
 
       console.log('✅ Login exitoso:', data.user?.email);
-      
-      // 3. Esperar y verificar
+
+      // 3. Esperar y verificar sesión
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       const { data: { session } } = await supabase.auth.getSession();
-      
       if (!session) {
         throw new Error('La sesión no se estableció');
       }
-      
-      console.log('🎉 Redirigiendo al dashboard...');
-      
-      // 4. REDIRECCIÓN MANUAL Y FORZADA
-      window.location.href = '/dashboard';
-      
+
+      const userId = data.user.id;
+
+      // 4. Verificar si es laboratorista (existe en tabla laboratoristas)
+      const { data: laboratorista, error: labError } = await supabase
+        .from('laboratoristas')
+        .select('activo, usuario_id')
+        .eq('id', userId)
+        .maybeSingle(); // Usamos maybeSingle para no fallar si no existe
+
+      if (laboratorista) {
+        // Es laboratorista
+        if (!laboratorista.activo) {
+          throw new Error('Tu cuenta de laboratorista está desactivada. Contacta al administrador.');
+        }
+
+        // Verificar suscripción del administrador asociado
+        const { data: adminProfile, error: adminError } = await supabase
+          .from('perfiles_usuarios')
+          .select('suscripcion_activa, fecha_expiracion, plan')
+          .eq('id', laboratorista.usuario_id)
+          .single();
+
+        if (adminError || !adminProfile) {
+          throw new Error('No se pudo verificar la suscripción del laboratorio.');
+        }
+
+        if (!adminProfile.suscripcion_activa) {
+          throw new Error('La suscripción del laboratorio no está activa. No puedes acceder.');
+        }
+
+        if (adminProfile.fecha_expiracion && new Date(adminProfile.fecha_expiracion) < new Date()) {
+          throw new Error('La suscripción del laboratorio ha expirado. Contacta al administrador.');
+        }
+
+        // Redirigir al dashboard (el componente decidirá qué mostrar)
+        window.location.href = '/dashboard';
+      } else {
+        // No es laboratorista, asumimos que es administrador o usuario normal
+        const { data: perfil, error: perfilError } = await supabase
+          .from('perfiles_usuarios')
+          .select('suscripcion_activa, fecha_expiracion, plan')
+          .eq('id', userId)
+          .single();
+
+        if (perfilError || !perfil) {
+          throw new Error('No se encontró el perfil de usuario. Contacta al administrador.');
+        }
+
+        if (!perfil.suscripcion_activa) {
+          throw new Error('Tu suscripción no está activa. Por favor renueva tu plan.');
+        }
+
+        if (perfil.fecha_expiracion && new Date(perfil.fecha_expiracion) < new Date()) {
+          throw new Error('Tu suscripción ha expirado. Por favor renueva tu plan.');
+        }
+
+        // Redirigir al dashboard de administrador
+        window.location.href = '/dashboard';
+      }
+
     } catch (error: any) {
       console.error('❌ Error en login:', error);
       setError(error.message || 'Error desconocido');
@@ -83,7 +138,7 @@ const Login: React.FC = () => {
       marginBottom: '2rem'
     },
     logo: {
-      width: '80px', // Reducido de 3rem (48px) a 80px para imagen
+      width: '80px',
       height: '80px',
       marginBottom: '1rem',
       objectFit: 'contain' as const
@@ -97,6 +152,28 @@ const Login: React.FC = () => {
     subtitle: {
       color: '#64748b',
       margin: 0
+    },
+    tipoSelector: {
+      display: 'flex',
+      gap: '0.5rem',
+      marginBottom: '1.5rem',
+      justifyContent: 'center'
+    },
+    tipoButton: {
+      padding: '0.5rem 1rem',
+      border: '2px solid #e2e8f0',
+      borderRadius: '2rem',
+      backgroundColor: 'white',
+      color: '#475569',
+      cursor: 'pointer',
+      fontSize: '0.875rem',
+      fontWeight: '600',
+      transition: 'all 0.2s'
+    },
+    tipoButtonActive: {
+      backgroundColor: '#3b82f6',
+      borderColor: '#3b82f6',
+      color: 'white'
     },
     error: {
       backgroundColor: '#fef2f2',
@@ -155,6 +232,13 @@ const Login: React.FC = () => {
       fontSize: '0.875rem',
       cursor: 'pointer',
       fontWeight: '500'
+    },
+    infoMensaje: {
+      textAlign: 'center' as const,
+      marginBottom: '1rem',
+      fontSize: '0.875rem',
+      color: '#64748b',
+      fontStyle: 'italic'
     }
   };
 
@@ -162,15 +246,44 @@ const Login: React.FC = () => {
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.header}>
-          {/* Logo desde la carpeta public - tamaño ajustado */}
-          <img 
-            src="/icono Dentalflow-Manager.png" 
-            alt="DentalFlow Logo" 
+          <img
+            src="/icono Dentalflow-Manager.png"
+            alt="DentalFlow Logo"
             style={styles.logo}
           />
           <h2 style={styles.title}>DentalFlow</h2>
           <p style={styles.subtitle}>Inicia sesión en tu cuenta</p>
         </div>
+
+        {/* Selector de tipo de usuario */}
+        <div style={styles.tipoSelector}>
+          <button
+            style={{
+              ...styles.tipoButton,
+              ...(tipoSeleccionado === 'admin' ? styles.tipoButtonActive : {})
+            }}
+            onClick={() => setTipoSeleccionado('admin')}
+          >
+            👤 Administrador
+          </button>
+          <button
+            style={{
+              ...styles.tipoButton,
+              ...(tipoSeleccionado === 'laboratorista' ? styles.tipoButtonActive : {})
+            }}
+            onClick={() => setTipoSeleccionado('laboratorista')}
+          >
+            🔧 Laboratorista
+          </button>
+        </div>
+
+        {tipoSeleccionado && (
+          <div style={styles.infoMensaje}>
+            {tipoSeleccionado === 'admin'
+              ? 'Ingresa con tu cuenta de administrador del laboratorio'
+              : 'Ingresa con tu cuenta de laboratorista (creada por el administrador)'}
+          </div>
+        )}
 
         {error && <div style={styles.error}>{error}</div>}
 
@@ -220,7 +333,7 @@ const Login: React.FC = () => {
           >
             ¿Olvidaste tu contraseña?
           </span>
-          
+
           <span
             style={styles.link}
             onClick={() => navigate('/registro')}

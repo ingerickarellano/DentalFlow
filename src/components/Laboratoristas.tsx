@@ -1,19 +1,185 @@
-import React, { useState } from 'react';
-import { Laboratorista, laboratoristas, agregarLaboratorista, actualizarLaboratorista, eliminarLaboratorista, toggleActivoLaboratorista } from '../data/database';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface LaboratoristasProps {
   onBack: () => void;
+  user: any; // usuario administrador autenticado
 }
 
-const Laboratoristas: React.FC<LaboratoristasProps> = ({ onBack }) => {
+interface Laboratorista {
+  id: string;
+  nombre: string;
+  especialidad: string;
+  telefono: string;
+  email: string;
+  activo: boolean;
+  usuario_id: string; // administrador que lo creó
+  created_at: string;
+}
+
+const Laboratoristas: React.FC<LaboratoristasProps> = ({ onBack, user }) => {
+  const [laboratoristas, setLaboratoristas] = useState<Laboratorista[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [currentLaboratorista, setCurrentLaboratorista] = useState<Laboratorista | null>(null);
   const [formData, setFormData] = useState({
     nombre: '',
     especialidad: '',
     telefono: '',
-    email: ''
+    email: '',
+    password: '' // solo para creación
   });
+  const [cargando, setCargando] = useState(false);
+
+  const especialidades = [
+    'Prótesis Fija',
+    'Prótesis Removible',
+    'Implantes',
+    'Ortodoncia',
+    'Cerámica Dental',
+    'Modelación',
+    'Acrílicos',
+    'CoCr',
+    'Zirconio',
+    'General'
+  ];
+
+  useEffect(() => {
+    cargarLaboratoristas();
+  }, []);
+
+  const cargarLaboratoristas = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('laboratoristas')
+        .select('*')
+        .eq('usuario_id', user.id)
+        .order('nombre');
+
+      if (error) throw error;
+      setLaboratoristas(data || []);
+    } catch (error) {
+      console.error('Error cargando laboratoristas:', error);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCargando(true);
+
+    try {
+      if (currentLaboratorista) {
+        // Editar laboratorista existente (solo perfil)
+        const { error } = await supabase
+          .from('laboratoristas')
+          .update({
+            nombre: formData.nombre,
+            especialidad: formData.especialidad,
+            telefono: formData.telefono,
+            email: formData.email
+          })
+          .eq('id', currentLaboratorista.id);
+
+        if (error) throw error;
+        alert('Laboratorista actualizado exitosamente');
+      } else {
+        // Crear nuevo laboratorista: primero registrar usuario en auth
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              nombre: formData.nombre,
+              rol: 'laboratorista'
+            }
+          }
+        });
+
+        if (authError) throw authError;
+        if (!authData.user) throw new Error('No se pudo crear el usuario');
+
+        // Luego insertar en laboratoristas con el mismo ID
+        const { error } = await supabase
+          .from('laboratoristas')
+          .insert([{
+            id: authData.user.id,
+            nombre: formData.nombre,
+            especialidad: formData.especialidad,
+            telefono: formData.telefono,
+            email: formData.email,
+            activo: true,
+            usuario_id: user.id
+          }]);
+
+        if (error) {
+          // Si falla la inserción en laboratoristas, deberíamos eliminar el usuario creado
+          // Esto requiere permisos de admin, así que lo omitimos por ahora
+          console.error('Error al insertar en laboratoristas:', error);
+          throw error;
+        }
+
+        alert('Laboratorista creado exitosamente');
+      }
+
+      setShowForm(false);
+      setFormData({ nombre: '', especialidad: '', telefono: '', email: '', password: '' });
+      setCurrentLaboratorista(null);
+      cargarLaboratoristas();
+
+    } catch (error: any) {
+      console.error('Error guardando laboratorista:', error);
+      alert(`Error: ${error.message}`);
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const handleEdit = (laboratorista: Laboratorista) => {
+    setCurrentLaboratorista(laboratorista);
+    setFormData({
+      nombre: laboratorista.nombre,
+      especialidad: laboratorista.especialidad,
+      telefono: laboratorista.telefono,
+      email: laboratorista.email,
+      password: '' // no se edita
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('¿Estás seguro de que quieres eliminar este laboratorista? También se eliminará su acceso al sistema.')) return;
+
+    try {
+      // En lugar de eliminar, lo desactivamos (más seguro)
+      const { error } = await supabase
+        .from('laboratoristas')
+        .update({ activo: false })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      alert('Laboratorista desactivado. Para eliminarlo completamente, contacta al administrador.');
+      cargarLaboratoristas();
+
+    } catch (error: any) {
+      console.error('Error eliminando laboratorista:', error);
+      alert(`Error: ${error.message}`);
+    }
+  };
+
+  const handleToggleActivo = async (id: string, activoActual: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('laboratoristas')
+        .update({ activo: !activoActual })
+        .eq('id', id);
+
+      if (error) throw error;
+      cargarLaboratoristas();
+    } catch (error) {
+      console.error('Error cambiando estado:', error);
+      alert('Error al cambiar estado');
+    }
+  };
 
   const styles = {
     container: {
@@ -133,62 +299,6 @@ const Laboratoristas: React.FC<LaboratoristasProps> = ({ onBack }) => {
     }
   };
 
-  const especialidades = [
-    'Prótesis Fija',
-    'Prótesis Removible',
-    'Implantes',
-    'Ortodoncia',
-    'Cerámica Dental',
-    'Modelación',
-    'Acrílicos',
-    'CoCr',
-    'Zirconio',
-    'General'
-  ];
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (currentLaboratorista) {
-      // Editar laboratorista existente
-      actualizarLaboratorista(currentLaboratorista.id, formData);
-      alert('Laboratorista actualizado exitosamente');
-    } else {
-      // Crear nuevo laboratorista
-      agregarLaboratorista({
-        ...formData,
-        activo: true
-      });
-      alert('Laboratorista agregado exitosamente');
-    }
-    
-    setShowForm(false);
-    setFormData({ nombre: '', especialidad: '', telefono: '', email: '' });
-    setCurrentLaboratorista(null);
-  };
-
-  const handleEdit = (laboratorista: Laboratorista) => {
-    setCurrentLaboratorista(laboratorista);
-    setFormData({
-      nombre: laboratorista.nombre,
-      especialidad: laboratorista.especialidad,
-      telefono: laboratorista.telefono,
-      email: laboratorista.email
-    });
-    setShowForm(true);
-  };
-
-  const handleDelete = (id: string) => {
-    if (window.confirm('¿Estás seguro de que quieres eliminar este laboratorista?')) {
-      eliminarLaboratorista(id);
-      alert('Laboratorista eliminado exitosamente');
-    }
-  };
-
-  const handleToggleActivo = (id: string) => {
-    toggleActivoLaboratorista(id);
-  };
-
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -202,7 +312,7 @@ const Laboratoristas: React.FC<LaboratoristasProps> = ({ onBack }) => {
           style={styles.button}
           onClick={() => {
             setCurrentLaboratorista(null);
-            setFormData({ nombre: '', especialidad: '', telefono: '', email: '' });
+            setFormData({ nombre: '', especialidad: '', telefono: '', email: '', password: '' });
             setShowForm(!showForm);
           }}
         >
@@ -212,7 +322,7 @@ const Laboratoristas: React.FC<LaboratoristasProps> = ({ onBack }) => {
 
       {showForm && (
         <form style={styles.form} onSubmit={handleSubmit}>
-          <h3 style={{margin: '0 0 1rem 0', color: '#1e293b'}}>
+          <h3 style={{ margin: '0 0 1rem 0', color: '#1e293b' }}>
             {currentLaboratorista ? 'Editar Laboratorista' : 'Nuevo Laboratorista'}
           </h3>
           
@@ -257,18 +367,39 @@ const Laboratoristas: React.FC<LaboratoristasProps> = ({ onBack }) => {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>Email</label>
+            <label style={styles.label}>Email *</label>
             <input
               type="email"
               style={styles.input}
               value={formData.email}
               onChange={(e) => setFormData({...formData, email: e.target.value})}
               placeholder="Ej: tecnico@laboratorio.com"
+              required
+              disabled={!!currentLaboratorista} // No se puede editar email
             />
           </div>
 
-          <button type="submit" style={styles.button}>
-            {currentLaboratorista ? 'Actualizar' : 'Guardar'} Laboratorista
+          {!currentLaboratorista && (
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Contraseña *</label>
+              <input
+                type="password"
+                style={styles.input}
+                value={formData.password}
+                onChange={(e) => setFormData({...formData, password: e.target.value})}
+                placeholder="Mínimo 6 caracteres"
+                required
+                minLength={6}
+              />
+            </div>
+          )}
+
+          <button 
+            type="submit" 
+            style={styles.button}
+            disabled={cargando}
+          >
+            {cargando ? 'Guardando...' : (currentLaboratorista ? 'Actualizar' : 'Guardar')} Laboratorista
           </button>
         </form>
       )}
@@ -291,7 +422,7 @@ const Laboratoristas: React.FC<LaboratoristasProps> = ({ onBack }) => {
             <div style={styles.buttonGroup}>
               <button 
                 style={styles.toggleButton}
-                onClick={() => handleToggleActivo(laboratorista.id)}
+                onClick={() => handleToggleActivo(laboratorista.id, laboratorista.activo)}
               >
                 {laboratorista.activo ? 'Desactivar' : 'Activar'}
               </button>

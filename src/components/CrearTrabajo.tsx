@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+// CrearTrabajo.tsx
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
 
+// Interfaces (mantener igual que antes)
 interface CrearTrabajoProps {
   onBack: () => void;
 }
@@ -78,7 +80,7 @@ interface ConfiguracionDetallada {
 const categorias = {
   'todos': '📋 Todos',
   'fija': '🦷 Prótesis Fija',
-  'removible': '👄 Prótesis Removible', 
+  'removible': '👄 Prótesis Removible',
   'implantes': '⚡ Implantes',
   'ortodoncia': '🎯 Ortodoncia',
   'reparaciones': '🔧 Reparaciones',
@@ -119,7 +121,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [dentistas, setDentistas] = useState<DentistaSupabase[]>([]);
   const [laboratoristas, setLaboratoristas] = useState<LaboratoristaSupabase[]>([]);
   const [servicios, setServicios] = useState<ServicioSupabase[]>([]);
-  
+
   const [clinicaSeleccionada, setClinicaSeleccionada] = useState<string>('');
   const [dentistaSeleccionado, setDentistaSeleccionado] = useState<string>('');
   const [laboratoristaSeleccionado, setLaboratoristaSeleccionado] = useState<string>('');
@@ -141,7 +143,11 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [historialServicios, setHistorialServicios] = useState<HistorialServicio[]>([]);
   const [cargandoHistorial, setCargandoHistorial] = useState<boolean>(false);
   const [user, setUser] = useState<any>(null);
-  
+
+  // Estados para evitar múltiples clics
+  const [agregando, setAgregando] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+
   const [configDetallada, setConfigDetallada] = useState<ConfiguracionDetallada>({
     tooth: '',
     materialConfig: 'Default',
@@ -156,6 +162,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     materialType: 'Zirconia',
     toothColor: 'A2'
   });
+
+  // Ref para el inicio del formulario
+  const inicioRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setShowFloatingCounter(trabajosAgregados.length > 0);
@@ -185,7 +194,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           .select('*')
           .eq('id', authUser.id)
           .single();
-        
+
         setUser({
           ...authUser,
           ...perfilData
@@ -194,43 +203,24 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     };
     cargarUsuario();
   }, []);
+const scrollPos = useRef(0);
 
+const createInputHandler = (setter: React.Dispatch<React.SetStateAction<any>>) => 
+  (e: React.ChangeEvent<HTMLInputElement>) => {
+    scrollPos.current = window.scrollY;
+    setter(e.target.value);
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollPos.current);
+    });
+  };
   const materialCategories = [
-    { 
-      category: 'Dentición Residual', 
-      items: ['Diente adyacente', 'Orientar endoestructura', 'Injerto en puente', 'Antagonista'], 
-      icon: '🏗️'
-    },
-    { 
-      category: 'Barras', 
-      items: ['Pilar de barra', 'Segmento de barra'], 
-      icon: '📏'
-    },
-    { 
-      category: 'Removibles y Aparatos', 
-      items: ['Dentadura completa', 'Corona telescópica primaria', 'Corona telescópica secundaria'], 
-      icon: '👄'
-    },
-    { 
-      category: 'Fresado Digital por Copia', 
-      items: ['Fresado digital por copia'], 
-      icon: '💻'
-    },
-    { 
-      category: 'Inlays, Onlays y Carillas', 
-      items: ['Inlay/Onlay', 'Carilla'], 
-      icon: '🔩'
-    },
-    { 
-      category: 'Pónticos y Mockup', 
-      items: ['Póntico anatómico', 'Póntico excelente (Provisional)'], 
-      icon: '🦷'
-    },
-    { 
-      category: 'Coronas y Copings', 
-      items: ['Corona amitónica', 'Corona excelente (Cordón frontal)'], 
-      icon: '👑'
-    }
+    { category: 'Dentición Residual', items: ['Diente adyacente', 'Orientar endoestructura', 'Injerto en puente', 'Antagonista'], icon: '🏗️' },
+    { category: 'Barras', items: ['Pilar de barra', 'Segmento de barra'], icon: '📏' },
+    { category: 'Removibles y Aparatos', items: ['Dentadura completa', 'Corona telescópica primaria', 'Corona telescópica secundaria'], icon: '👄' },
+    { category: 'Fresado Digital por Copia', items: ['Fresado digital por copia'], icon: '💻' },
+    { category: 'Inlays, Onlays y Carillas', items: ['Inlay/Onlay', 'Carilla'], icon: '🔩' },
+    { category: 'Pónticos y Mockup', items: ['Póntico anatómico', 'Póntico excelente (Provisional)'], icon: '🦷' },
+    { category: 'Coronas y Copings', items: ['Corona amitónica', 'Corona excelente (Cordón frontal)'], icon: '👑' }
   ];
 
   const materialTypes = [
@@ -376,9 +366,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     const cargarDatosIniciales = async () => {
       try {
         setCargandoDatos(true);
-        
+
         const { data: { user } } = await supabase.auth.getUser();
-        
+
         if (!user) {
           console.error('No hay usuario autenticado');
           return;
@@ -428,18 +418,18 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         setCargandoDatos(false);
       }
     };
-    
+
     cargarDatosIniciales();
   }, []);
 
   const cargarHistorialServicios = async () => {
     if (!clinicaSeleccionada) return;
-    
+
     try {
       setCargandoHistorial(true);
-      
+
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         console.error('No hay usuario autenticado');
         return;
@@ -460,14 +450,14 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       if (error) throw error;
 
       const historialMap = new Map<string, HistorialServicio>();
-      
+
       data?.forEach(trabajo => {
         if (trabajo.servicios && Array.isArray(trabajo.servicios)) {
           trabajo.servicios.forEach((serv: any) => {
             if (serv.servicio_id) {
               const key = serv.servicio_id;
               const existing = historialMap.get(key);
-              
+
               if (existing) {
                 existing.veces_usado += serv.cantidad || 1;
                 if (new Date(trabajo.created_at) > existing.ultimo_uso) {
@@ -493,7 +483,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         .slice(0, 20);
 
       setHistorialServicios(historialArray);
-      
+
     } catch (error: any) {
       console.error('Error cargando historial de servicios:', error);
     } finally {
@@ -504,9 +494,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const cargarServicios = async () => {
     try {
       setCargandoServicios(true);
-      
+
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         console.error('No hay usuario autenticado');
         return;
@@ -537,7 +527,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   }, [clinicaSeleccionada, dentistas]);
 
   const getToothColorHex = (color: string): string => {
-    const colorMap: {[key: string]: string} = {
+    const colorMap: { [key: string]: string } = {
       'A1': '#fffaf0', 'A2': '#fef3c7', 'A3': '#fde68a', 'A3.5': '#fcd34d', 'A4': '#fbbf24',
       'B1': '#fef9c3', 'B2': '#fef08a', 'B3': '#fde047', 'B4': '#facc15',
       'C1': '#fef3c7', 'C2': '#fde68a', 'C3': '#fcd34d', 'C4': '#fbbf24',
@@ -550,19 +540,19 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     if (servicios.length === 0) return [];
 
     let filtrados = servicios;
-    
+
     if (categoriaSeleccionada !== 'todos') {
       filtrados = filtrados.filter(servicio => servicio.categoria === categoriaSeleccionada);
     }
-    
+
     if (terminoBusquedaDebounced.trim()) {
       const terminoLower = terminoBusquedaDebounced.toLowerCase().trim();
-      filtrados = filtrados.filter(servicio => 
+      filtrados = filtrados.filter(servicio =>
         servicio.nombre.toLowerCase().includes(terminoLower) ||
         (categorias[servicio.categoria as keyof typeof categorias]?.toLowerCase() || '').includes(terminoLower)
       );
     }
-    
+
     return filtrados;
   }, [servicios, categoriaSeleccionada, terminoBusquedaDebounced]);
 
@@ -578,18 +568,22 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const formatearFecha = (fechaStr: string) => {
     const [año, mes] = fechaStr.split('-');
     const fecha = new Date(parseInt(año), parseInt(mes) - 1, 1);
-    
+
     return fecha.toLocaleDateString(idioma === 'es' ? 'es-CL' : 'en-US', {
       month: 'long',
       year: 'numeric'
     });
   };
 
+  // Función para agregar trabajo con control de duplicados
   const agregarTrabajoSimple = (servicio: ServicioSupabase) => {
+    if (agregando) return;
+    setAgregando(true);
+
     const cantidad = cantidades[servicio.id] || 1;
     const piezaDental = piezasDentales[servicio.id] || '';
     const notaEspecial = notasServicios[servicio.id] || '';
-    
+
     let fechaTrabajoDate: Date | undefined;
     if (fechaTrabajo) {
       const [año, mes] = fechaTrabajo.split('-');
@@ -608,15 +602,17 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       fechaTrabajo: fechaTrabajoDate
     };
 
-    setTrabajosAgregados([...trabajosAgregados, trabajo]);
+    setTrabajosAgregados(prev => [...prev, trabajo]);
     setCantidades(prev => ({ ...prev, [servicio.id]: 1 }));
     setPiezasDentales(prev => ({ ...prev, [servicio.id]: '' }));
     setNotasServicios(prev => ({ ...prev, [servicio.id]: '' }));
+
+    setTimeout(() => setAgregando(false), 300);
   };
 
   const agregarDesdeHistorial = (servicioHistorial: HistorialServicio) => {
     const servicioCompleto = servicios.find(s => s.id === servicioHistorial.servicio_id);
-    
+
     if (servicioCompleto) {
       agregarTrabajoSimple(servicioCompleto);
     } else {
@@ -631,7 +627,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         updated_at: new Date().toISOString(),
         created_at: new Date().toISOString()
       };
-      
+
       agregarTrabajoSimple(servicioTemporal);
     }
   };
@@ -641,38 +637,45 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   };
 
   const calcularTotal = () => {
-    return trabajosAgregados.reduce((total, trabajo) => 
+    return trabajosAgregados.reduce((total, trabajo) =>
       total + (trabajo.precioUnitario * trabajo.cantidad), 0
     );
   };
 
   const finalizarTrabajo = async () => {
+    if (guardando) return;
+    setGuardando(true);
+
     if (!clinicaSeleccionada) {
       alert(idioma === 'es' ? 'Por favor selecciona una clínica' : 'Please select a clinic');
+      setGuardando(false);
       return;
     }
 
     if (trabajosAgregados.length === 0) {
       alert(idioma === 'es' ? 'Por favor agrega al menos un trabajo' : 'Please add at least one work');
+      setGuardando(false);
       return;
     }
 
     if (!fechaTrabajo) {
       alert(idioma === 'es' ? 'Por favor selecciona un mes para el trabajo' : 'Please select a month for the work');
+      setGuardando(false);
       return;
     }
 
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
+
       if (userError) {
         console.error('❌ Error al obtener usuario:', userError);
         throw userError;
       }
-      
+
       if (!user) {
         console.error('❌ No hay usuario autenticado');
         alert(idioma === 'es' ? 'No hay usuario autenticado' : 'No authenticated user');
+        setGuardando(false);
         return;
       }
 
@@ -690,7 +693,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       }, {} as Record<string, { paciente: string, rutPaciente: string, trabajos: TrabajoAgregado[] }>);
 
       let trabajosGuardados = 0;
-      
+
       for (const [, grupo] of Object.entries(trabajosPorPaciente)) {
         const serviciosParaBD = grupo.trabajos.map(trabajo => ({
           servicio_id: trabajo.servicio.id,
@@ -703,11 +706,11 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
         const [año, mes] = fechaTrabajo.split('-');
         const fechaCreacion = new Date(parseInt(año), parseInt(mes) - 1, 1);
-        
+
         const fechaEntrega = new Date(fechaCreacion);
         fechaEntrega.setDate(fechaEntrega.getDate() + 7);
 
-        const totalPaciente = grupo.trabajos.reduce((total, trabajo) => 
+        const totalPaciente = grupo.trabajos.reduce((total, trabajo) =>
           total + (trabajo.precioUnitario * trabajo.cantidad), 0
         );
 
@@ -721,8 +724,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           estado: 'pendiente',
           precio_total: totalPaciente,
           fecha_creacion: fechaCreacion.toISOString(),
+          fecha_recibido: fechaCreacion.toISOString(),
           fecha_entrega_estimada: fechaEntrega.toISOString().split('T')[0],
-          notas: grupo.trabajos.map(t => 
+          notas: grupo.trabajos.map(t =>
             `${t.servicio.nombre}${t.notaEspecial ? ` (Nota: ${t.notaEspecial})` : ''}`
           ).join(' | '),
           modo: 'clinica',
@@ -741,22 +745,24 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         trabajosGuardados++;
       }
 
-      const mensajeExito = idioma === 'es' 
+      const mensajeExito = idioma === 'es'
         ? `¡${trabajosGuardados} trabajos creados exitosamente!\nSe creó un trabajo por cada paciente.`
         : `Work created successfully!\nCreated ${trabajosGuardados} work orders (one per patient).`;
-      
+
       alert(mensajeExito);
-      
+
       limpiarTodo();
-      
+
     } catch (error: any) {
       console.error('❌ Error completo en finalizarTrabajo:', error);
-      
-      const mensajeError = idioma === 'es' 
+
+      const mensajeError = idioma === 'es'
         ? `Error al guardar el trabajo: ${error.message || 'Error desconocido'}. Por favor intenta nuevamente.`
         : `Error saving work: ${error.message || 'Unknown error'}. Please try again.`;
-      
+
       alert(mensajeError);
+    } finally {
+      setGuardando(false);
     }
   };
 
@@ -777,7 +783,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     const [año, mes] = fechaTrabajo.split('-').map(Number);
     let nuevoMes = mes;
     let nuevoAño = año;
-    
+
     if (direccion === 'anterior') {
       nuevoMes--;
       if (nuevoMes < 1) {
@@ -791,7 +797,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         nuevoAño++;
       }
     }
-    
+
     setFechaTrabajo(`${nuevoAño}-${String(nuevoMes).padStart(2, '0')}`);
   };
 
@@ -808,7 +814,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     const nuevosMateriales = configDetallada.selectedMaterials.includes(material)
       ? configDetallada.selectedMaterials.filter(m => m !== material)
       : [...configDetallada.selectedMaterials, material];
-    
+
     setConfigDetallada({
       ...configDetallada,
       selectedMaterials: nuevosMateriales
@@ -831,9 +837,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       'Acrílico/PMMA': 80000, 'Composite': 100000, 'Metal HP': 120000, 'Titanio': 250000,
       'Metal HP (Láser)': 140000, 'Titanio (Láser)': 280000, '30 Print': 90000
     };
-    
+
     let precioBase = preciosMaterial[configDetallada.materialType] || 150000;
-    
+
     if (configDetallada.implantBased) precioBase += 50000;
     if (configDetallada.additionalScans) precioBase += 30000;
     if (configDetallada.minimalThickness < 0.3) precioBase += 40000;
@@ -886,8 +892,8 @@ Color del diente: ${configDetallada.toothColor}
       fechaTrabajo: fechaTrabajoDate
     };
 
-    setTrabajosAgregados([...trabajosAgregados, trabajo]);
-    
+    setTrabajosAgregados(prev => [...prev, trabajo]);
+
     setConfigDetallada({
       tooth: '',
       materialConfig: 'Default',
@@ -902,7 +908,7 @@ Color del diente: ${configDetallada.toothColor}
       materialType: 'Zirconia',
       toothColor: 'A2'
     });
-    
+
     alert(idioma === 'es' ? '¡Trabajo detallado agregado exitosamente!' : 'Detailed work added successfully!');
   };
 
@@ -910,7 +916,7 @@ Color del diente: ${configDetallada.toothColor}
     const confirmMessage = idioma === 'es'
       ? '¿Estás seguro de que quieres limpiar todo el trabajo en progreso?'
       : 'Are you sure you want to clear all work in progress?';
-    
+
     if (window.confirm(confirmMessage)) {
       setClinicaSeleccionada('');
       setDentistaSeleccionado('');
@@ -939,12 +945,12 @@ Color del diente: ${configDetallada.toothColor}
       });
       setShowFloatingCounter(false);
       setMostrarHistorial(false);
-      
+
       const hoy = new Date();
       const mes = String(hoy.getMonth() + 1).padStart(2, '0');
       const año = hoy.getFullYear();
       setFechaTrabajo(`${año}-${mes}`);
-      
+
       alert(idioma === 'es' ? 'Todo limpiado correctamente' : 'Everything cleared successfully');
     }
   };
@@ -952,12 +958,12 @@ Color del diente: ${configDetallada.toothColor}
   const handleNombrePacienteChange = (nuevoNombre: string) => {
     const nombreAnterior = nombrePaciente;
     setNombrePaciente(nuevoNombre);
-    
+
     if (trabajosAgregados.length > 0 && nuevoNombre.trim() !== '' && nombreAnterior !== nuevoNombre) {
       const trabajosConNombreDiferente = trabajosAgregados.filter(
         trabajo => trabajo.paciente !== nombreAnterior
       );
-      
+
       if (trabajosConNombreDiferente.length === 0 && nombreAnterior.trim() !== '') {
         const confirmar = window.confirm(t.actualizarPaciente);
         if (confirmar) {
@@ -975,7 +981,7 @@ Color del diente: ${configDetallada.toothColor}
   const handleRutPacienteChange = (nuevoRut: string) => {
     const rutAnterior = rutPaciente;
     setRutPaciente(nuevoRut);
-    
+
     if (trabajosAgregados.length > 0 && rutAnterior !== nuevoRut) {
       const trabajosActualizados = trabajosAgregados.map(trabajo => ({
         ...trabajo,
@@ -989,9 +995,16 @@ Color del diente: ${configDetallada.toothColor}
     await supabase.auth.signOut();
   };
 
+  // Scroll al inicio
+  const scrollAlInicio = () => {
+    if (inicioRef.current) {
+      inicioRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const styles: { [key: string]: React.CSSProperties } = {
     container: {
-      minHeight: '100vh',
+      minHeight: '100%',
       backgroundColor: '#f8fafc',
       color: '#1e293b',
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
@@ -1368,7 +1381,13 @@ Color del diente: ${configDetallada.toothColor}
       fontSize: '14px',
       fontWeight: '600',
       transition: 'background-color 0.2s',
-      flex: 1
+      flex: 1,
+      opacity: 1
+    },
+    addButtonDisabled: {
+      backgroundColor: '#9ca3af',
+      cursor: 'not-allowed',
+      opacity: 0.5
     },
     clearButton: {
       backgroundColor: '#ef4444',
@@ -1677,7 +1696,7 @@ Color del diente: ${configDetallada.toothColor}
           {mostrarHistorial ? '👁️ Ocultar' : '👁️ Mostrar'} {mostrarHistorial ? t.ocultarHistorial : t.verHistorial}
         </button>
       </div>
-      
+
       {mostrarHistorial && (
         <>
           {cargandoHistorial ? (
@@ -1693,8 +1712,8 @@ Color del diente: ${configDetallada.toothColor}
           ) : (
             <div style={styles.historialGrid}>
               {historialServicios.slice(0, 6).map((servicio, index) => (
-                <div 
-                  key={servicio.servicio_id} 
+                <div
+                  key={servicio.servicio_id}
                   style={styles.historialCard}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-3px)';
@@ -1733,7 +1752,7 @@ Color del diente: ${configDetallada.toothColor}
     <div style={styles.detailedContainer}>
       <div style={styles.column}>
         <h3 style={styles.columnTitle}>{t.tiposTrabajos}</h3>
-        
+
         {materialCategories.map((category, index) => (
           <div key={index} style={styles.categoryCard}>
             <div style={styles.categoryHeader}>
@@ -1741,8 +1760,8 @@ Color del diente: ${configDetallada.toothColor}
               <h4 style={styles.categoryTitle}>{category.category}</h4>
             </div>
             {category.items.map((item, itemIndex) => (
-              <div 
-                key={itemIndex} 
+              <div
+                key={itemIndex}
                 style={styles.materialItem}
                 onClick={() => toggleMaterial(item)}
               >
@@ -1761,7 +1780,7 @@ Color del diente: ${configDetallada.toothColor}
 
       <div style={styles.column}>
         <h3 style={styles.columnTitle}>{t.materialUtilizar}</h3>
-        
+
         <div style={styles.toothConfig}>
           <div style={styles.formGroup}>
             <label style={styles.label}>{t.diente}</label>
@@ -1769,17 +1788,17 @@ Color del diente: ${configDetallada.toothColor}
               type="text"
               style={styles.input}
               value={configDetallada.tooth}
-              onChange={(e) => setConfigDetallada({...configDetallada, tooth: e.target.value})}
+              onChange={(e) => setConfigDetallada({ ...configDetallada, tooth: e.target.value })}
               placeholder="Ej: 15, 21, 36"
             />
           </div>
-          
+
           <div style={styles.formGroup}>
             <label style={styles.label}>{t.materialConfig}</label>
-            <select 
+            <select
               style={styles.select}
               value={configDetallada.materialConfig}
-              onChange={(e) => setConfigDetallada({...configDetallada, materialConfig: e.target.value})}
+              onChange={(e) => setConfigDetallada({ ...configDetallada, materialConfig: e.target.value })}
             >
               <option value="Default">Default</option>
               <option value="Premium">Premium</option>
@@ -1787,7 +1806,7 @@ Color del diente: ${configDetallada.toothColor}
               <option value="Custom">Personalizado</option>
             </select>
           </div>
-          
+
           <div style={styles.formGroup}>
             <label style={styles.label}>{t.materialBase}</label>
             <div style={{ padding: '12px', backgroundColor: '#f1f5f9', borderRadius: '6px' }}>
@@ -1799,21 +1818,21 @@ Color del diente: ${configDetallada.toothColor}
         <h4 style={styles.optionTitle}>{t.materialType}</h4>
         <div style={styles.materialTypeGrid}>
           {materialTypes.map((type, index) => (
-            <div 
-              key={index} 
+            <div
+              key={index}
               style={{
                 ...styles.materialTypeCard,
                 ...(configDetallada.materialType === type ? styles.materialTypeCardSelected : {})
               }}
-              onClick={() => setConfigDetallada({...configDetallada, materialType: type})}
+              onClick={() => setConfigDetallada({ ...configDetallada, materialType: type })}
             >
               <div style={styles.materialTypeName}>{type}</div>
               <div style={styles.materialTypePrice}>
                 {formatearPrecioCLP(
-                  type === 'Zirconia' ? 150000 : 
-                  type === 'Titanio' ? 250000 : 
-                  type === 'Acrílico/PMMA' ? 80000 : 
-                  type.includes('Zirconia') ? 180000 : 100000
+                  type === 'Zirconia' ? 150000 :
+                    type === 'Titanio' ? 250000 :
+                      type === 'Acrílico/PMMA' ? 80000 :
+                        type.includes('Zirconia') ? 180000 : 100000
                 )}
               </div>
             </div>
@@ -1823,25 +1842,25 @@ Color del diente: ${configDetallada.toothColor}
 
       <div style={styles.column}>
         <h3 style={styles.columnTitle}>{t.opcionesParametros}</h3>
-        
+
         <div style={styles.optionGroup}>
           <h4 style={styles.optionTitle}>📊 {t.optionsParams}</h4>
           <label style={styles.checkboxLabel}>
             <div style={{
               ...styles.customCheckbox,
               ...(configDetallada.implantBased ? styles.customCheckboxChecked : {})
-            }} 
-              onClick={() => setConfigDetallada({...configDetallada, implantBased: !configDetallada.implantBased})}
+            }}
+              onClick={() => setConfigDetallada({ ...configDetallada, implantBased: !configDetallada.implantBased })}
             />
             <span>{t.implantBased}</span>
           </label>
-          
+
           <div style={{ marginTop: '12px' }}>
             <label style={styles.label}>1. {t.customAbstinent}</label>
-            <select 
+            <select
               style={styles.select}
               value={configDetallada.customAbstinent}
-              onChange={(e) => setConfigDetallada({...configDetallada, customAbstinent: e.target.value})}
+              onChange={(e) => setConfigDetallada({ ...configDetallada, customAbstinent: e.target.value })}
             >
               <option value="">Seleccionar opción</option>
               <option value="Orsular Monaco">Orsular Monaco</option>
@@ -1849,13 +1868,13 @@ Color del diente: ${configDetallada.toothColor}
               <option value="Other">Otro</option>
             </select>
           </div>
-          
-          <label style={{...styles.checkboxLabel, marginTop: '12px'}}>
+
+          <label style={{ ...styles.checkboxLabel, marginTop: '12px' }}>
             <div style={{
               ...styles.customCheckbox,
               ...(configDetallada.additionalScans ? styles.customCheckboxChecked : {})
-            }} 
-              onClick={() => setConfigDetallada({...configDetallada, additionalScans: !configDetallada.additionalScans})}
+            }}
+              onClick={() => setConfigDetallada({ ...configDetallada, additionalScans: !configDetallada.additionalScans })}
             />
             <span>{t.additionalScans}</span>
           </label>
@@ -1874,7 +1893,7 @@ Color del diente: ${configDetallada.toothColor}
               max="2.0"
               step="0.1"
               value={configDetallada.minimalThickness}
-              onChange={(e) => setConfigDetallada({...configDetallada, minimalThickness: parseFloat(e.target.value)})}
+              onChange={(e) => setConfigDetallada({ ...configDetallada, minimalThickness: parseFloat(e.target.value) })}
               style={styles.slider}
             />
           </div>
@@ -1889,7 +1908,7 @@ Color del diente: ${configDetallada.toothColor}
               max="0.5"
               step="0.01"
               value={configDetallada.gapWidthCement}
-              onChange={(e) => setConfigDetallada({...configDetallada, gapWidthCement: parseFloat(e.target.value)})}
+              onChange={(e) => setConfigDetallada({ ...configDetallada, gapWidthCement: parseFloat(e.target.value) })}
               style={styles.slider}
             />
           </div>
@@ -1901,8 +1920,8 @@ Color del diente: ${configDetallada.toothColor}
             <div style={{
               ...styles.customCheckbox,
               ...(configDetallada.orsStockAbstinent ? styles.customCheckboxChecked : {})
-            }} 
-              onClick={() => setConfigDetallada({...configDetallada, orsStockAbstinent: !configDetallada.orsStockAbstinent})}
+            }}
+              onClick={() => setConfigDetallada({ ...configDetallada, orsStockAbstinent: !configDetallada.orsStockAbstinent })}
             />
             <span>{t.orsStockAbstinent}</span>
           </label>
@@ -1919,7 +1938,7 @@ Color del diente: ${configDetallada.toothColor}
                   backgroundColor: getToothColorHex(color),
                   ...(configDetallada.toothColor === color ? styles.colorItemSelected : {})
                 }}
-                onClick={() => setConfigDetallada({...configDetallada, toothColor: color})}
+                onClick={() => setConfigDetallada({ ...configDetallada, toothColor: color })}
               >
                 {color}
               </div>
@@ -1928,7 +1947,7 @@ Color del diente: ${configDetallada.toothColor}
         </div>
 
         <div style={styles.createButton}>
-          <button 
+          <button
             style={styles.button}
             onClick={crearTrabajoDetallado}
             disabled={!configDetallada.tooth || configDetallada.selectedMaterials.length === 0}
@@ -1940,29 +1959,10 @@ Color del diente: ${configDetallada.toothColor}
     </div>
   );
 
-  if (cargandoDatos) {
-    return (
-      <div style={styles.container}>
-        <Header 
-          user={user}
-          onLogout={handleLogout}
-          showBackButton={true}
-          onBack={onBack}
-          title={t.title}
-        />
-        <main style={styles.mainContent}>
-          <div style={styles.loadingContainer}>
-            <div style={{ fontSize: '3rem' }}>🔄</div>
-            <div style={styles.loadingText}>{t.cargandoDatos}</div>
-          </div>
-        </main>
-      </div>
-    );
-  }
 
   return (
     <div style={styles.container}>
-      <Header 
+      <Header
         user={user}
         onLogout={handleLogout}
         showBackButton={true}
@@ -1971,12 +1971,23 @@ Color del diente: ${configDetallada.toothColor}
       />
 
       <main style={styles.mainContent}>
+        {/* Referencia para el scroll hacia arriba */}
+        {/* ✅ FIX: cargandoDatos inline para evitar remount y scroll */}
+        {cargandoDatos ? (
+          <div style={styles.loadingContainer}>
+            <div style={{ fontSize: '3rem' }}>🔄</div>
+            <div style={styles.loadingText}>{t.cargandoDatos}</div>
+          </div>
+        ) : (
+          <div>
+            {/* Referencia para el scroll hacia arriba */}
+            <div ref={inicioRef} />
         <section style={styles.welcomeSection}>
           <h1 style={styles.welcomeTitle}>
             {t.title}
           </h1>
           <p style={styles.welcomeSubtitle}>
-            {idioma === 'es' 
+            {idioma === 'es'
               ? 'Crea listas de trabajo para tus pacientes seleccionando servicios de tu catálogo.'
               : 'Create work lists for your patients by selecting services from your catalog.'}
           </p>
@@ -1986,11 +1997,11 @@ Color del diente: ${configDetallada.toothColor}
           <h3 style={{ color: '#1e293b', marginBottom: '1.5rem', fontSize: '1.25rem' }}>
             📋 {idioma === 'es' ? 'Información del Trabajo' : 'Work Information'}
           </h3>
-          
+
           <div style={styles.formGrid}>
             <div style={styles.formGroup}>
               <label style={styles.label}>{t.clinica}</label>
-              <select 
+              <select
                 style={styles.select}
                 value={clinicaSeleccionada}
                 onChange={(e) => {
@@ -2011,7 +2022,7 @@ Color del diente: ${configDetallada.toothColor}
 
             <div style={styles.formGroup}>
               <label style={styles.label}>{t.dentista}</label>
-              <select 
+              <select
                 style={styles.select}
                 value={dentistaSeleccionado}
                 onChange={(e) => setDentistaSeleccionado(e.target.value)}
@@ -2028,7 +2039,7 @@ Color del diente: ${configDetallada.toothColor}
 
             <div style={styles.formGroup}>
               <label style={styles.label}>{t.laboratorista}</label>
-              <select 
+              <select
                 style={styles.select}
                 value={laboratoristaSeleccionado}
                 onChange={(e) => setLaboratoristaSeleccionado(e.target.value)}
@@ -2049,7 +2060,7 @@ Color del diente: ${configDetallada.toothColor}
               <div style={styles.dateDisplay}>
                 📅 {formatearFecha(fechaTrabajo)}
               </div>
-              
+
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button
                   style={styles.dateButton}
@@ -2058,7 +2069,7 @@ Color del diente: ${configDetallada.toothColor}
                 >
                   ◀️
                 </button>
-                
+
                 <input
                   type="month"
                   style={styles.input}
@@ -2066,7 +2077,7 @@ Color del diente: ${configDetallada.toothColor}
                   onChange={(e) => setFechaTrabajo(e.target.value)}
                   title={t.seleccionaMes}
                 />
-                
+
                 <button
                   style={styles.dateButton}
                   onClick={() => cambiarMes('siguiente')}
@@ -2074,7 +2085,7 @@ Color del diente: ${configDetallada.toothColor}
                 >
                   ▶️
                 </button>
-                
+
                 <button
                   style={styles.dateButton}
                   onClick={restablecerMesActual}
@@ -2110,7 +2121,7 @@ Color del diente: ${configDetallada.toothColor}
               />
             </div>
           </div>
-          
+
           {trabajosAgregados.length > 0 && (
             <div style={{
               marginTop: '1rem',
@@ -2228,21 +2239,21 @@ Color del diente: ${configDetallada.toothColor}
                 <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📝</div>
                 <h3 style={{ marginBottom: '0.5rem' }}>{t.sinServicios}</h3>
                 <p>
-                  {categoriaSeleccionada !== 'todos' 
+                  {categoriaSeleccionada !== 'todos'
                     ? `${idioma === 'es' ? 'No hay servicios en la categoría' : 'No services in category'} "${categorias[categoriaSeleccionada as keyof typeof categorias]}"`
-                    : terminoBusqueda.trim() 
-                    ? `${idioma === 'es' ? 'No hay resultados para' : 'No results for'} "${terminoBusqueda}"`
-                    : idioma === 'es' 
-                    ? 'Comienza agregando servicios en la Gestión de Precios'
-                    : 'Start by adding services in Price Management'
+                    : terminoBusqueda.trim()
+                      ? `${idioma === 'es' ? 'No hay resultados para' : 'No results for'} "${terminoBusqueda}"`
+                      : idioma === 'es'
+                        ? 'Comienza agregando servicios en la Gestión de Precios'
+                        : 'Start by adding services in Price Management'
                   }
                 </p>
               </div>
             ) : (
               <div style={styles.serviciosGrid}>
                 {serviciosFiltrados.map(servicio => (
-                  <div 
-                    key={servicio.id} 
+                  <div
+                    key={servicio.id}
                     style={styles.servicioCard}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = 'translateY(-5px)';
@@ -2274,7 +2285,7 @@ Color del diente: ${configDetallada.toothColor}
                           onChange={(e) => actualizarCantidad(servicio.id, parseInt(e.target.value) || 1)}
                           placeholder={idioma === 'es' ? "Cant" : "Qty"}
                         />
-                        
+
                         <input
                           type="text"
                           style={styles.inputPieza}
@@ -2282,17 +2293,25 @@ Color del diente: ${configDetallada.toothColor}
                           onChange={(e) => actualizarPiezaDental(servicio.id, e.target.value)}
                           placeholder={idioma === 'es' ? "Pieza" : "Tooth"}
                         />
-                        
-                        <button 
-                          style={styles.addButton}
+
+                        <button
+                          style={{
+                            ...styles.addButton,
+                            ...(agregando ? styles.addButtonDisabled : {})
+                          }}
                           onClick={() => agregarTrabajoSimple(servicio)}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
+                          disabled={agregando}
+                          onMouseEnter={(e) => {
+                            if (!agregando) e.currentTarget.style.backgroundColor = '#2563eb';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!agregando) e.currentTarget.style.backgroundColor = '#3b82f6';
+                          }}
                         >
-                          {t.agregar}
+                          {agregando ? '...' : t.agregar}
                         </button>
                       </div>
-                      
+
                       <input
                         type="text"
                         style={styles.inputNota}
@@ -2310,9 +2329,9 @@ Color del diente: ${configDetallada.toothColor}
               <h3 style={{ color: '#1e293b', marginBottom: '1.5rem', fontSize: '1.5rem' }}>
                 📋 {t.trabajosAgregados} ({trabajosAgregados.length})
                 {fechaTrabajo && (
-                  <span style={{ 
-                    fontSize: '1rem', 
-                    color: '#64748b', 
+                  <span style={{
+                    fontSize: '1rem',
+                    color: '#64748b',
                     marginLeft: '1rem',
                     fontWeight: 'normal'
                   }}>
@@ -2320,12 +2339,12 @@ Color del diente: ${configDetallada.toothColor}
                   </span>
                 )}
               </h3>
-              
+
               {trabajosAgregados.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
                   <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📝</div>
                   <p>
-                    {idioma === 'es' 
+                    {idioma === 'es'
                       ? 'No hay trabajos agregados. Completa los datos y agrega servicios.'
                       : 'No works added. Complete the information and add services.'}
                   </p>
@@ -2346,9 +2365,9 @@ Color del diente: ${configDetallada.toothColor}
                       acc[clave].trabajos.push(trabajo);
                       acc[clave].total += trabajo.precioUnitario * trabajo.cantidad;
                       return acc;
-                    }, {} as Record<string, { 
-                      paciente: string, 
-                      rutPaciente: string, 
+                    }, {} as Record<string, {
+                      paciente: string,
+                      rutPaciente: string,
                       trabajos: TrabajoAgregado[],
                       total: number
                     }>)
@@ -2361,9 +2380,9 @@ Color del diente: ${configDetallada.toothColor}
                       border: '1px solid #e2e8f0',
                       borderLeft: '4px solid #3b82f6'
                     }}>
-                      <div style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
                         marginBottom: '1.5rem',
                         paddingBottom: '1rem',
@@ -2378,8 +2397,8 @@ Color del diente: ${configDetallada.toothColor}
                               RUT: {grupo.rutPaciente}
                             </div>
                           )}
-                          <div style={{ 
-                            backgroundColor: '#3b82f6', 
+                          <div style={{
+                            backgroundColor: '#3b82f6',
                             color: 'white',
                             padding: '0.25rem 0.75rem',
                             borderRadius: '1rem',
@@ -2400,7 +2419,7 @@ Color del diente: ${configDetallada.toothColor}
                           </div>
                         </div>
                       </div>
-                      
+
                       {grupo.trabajos.map((trabajo, trabajoIndex) => (
                         <div key={trabajo.id} style={{
                           ...styles.trabajoItem,
@@ -2415,12 +2434,12 @@ Color del diente: ${configDetallada.toothColor}
                               <div>🦷 {idioma === 'es' ? 'Pieza:' : 'Tooth:'} {trabajo.piezaDental || (idioma === 'es' ? 'No especificada' : 'Not specified')}</div>
                               <div>🔢 {idioma === 'es' ? 'Cantidad:' : 'Quantity:'} {trabajo.cantidad}</div>
                               {trabajo.notaEspecial && (
-                                <div style={{ 
-                                  marginTop: '0.5rem', 
-                                  fontSize: '12px', 
-                                  color: '#f59e0b', 
-                                  backgroundColor: '#fef3c7', 
-                                  padding: '0.5rem', 
+                                <div style={{
+                                  marginTop: '0.5rem',
+                                  fontSize: '12px',
+                                  color: '#f59e0b',
+                                  backgroundColor: '#fef3c7',
+                                  padding: '0.5rem',
                                   borderRadius: '0.25rem',
                                   fontStyle: 'italic'
                                 }}>
@@ -2436,8 +2455,8 @@ Color del diente: ${configDetallada.toothColor}
                             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '0.25rem' }}>
                               {trabajo.cantidad > 1 && `(${formatearPrecioCLP(trabajo.precioUnitario)} ${idioma === 'es' ? 'c/u' : 'each'})`}
                             </div>
-                            <button 
-                              style={{ 
+                            <button
+                              style={{
                                 padding: '0.5rem 1rem',
                                 border: 'none',
                                 borderRadius: '0.375rem',
@@ -2457,7 +2476,7 @@ Color del diente: ${configDetallada.toothColor}
                           </div>
                         </div>
                       ))}
-                      
+
                       <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -2476,35 +2495,36 @@ Color del diente: ${configDetallada.toothColor}
                       </div>
                     </div>
                   ))}
-                  
+
                   <div style={styles.totalContainer}>
                     <span style={styles.totalText}>{t.total}:</span>
                     <span style={styles.totalAmount}>{formatearPrecioCLP(calcularTotal())}</span>
                   </div>
 
                   <div style={{ textAlign: 'center', marginTop: '2rem' }}>
-                    <button 
-                      style={{ 
+                    <button
+                      style={{
                         ...styles.addButton,
                         padding: '1rem 3rem',
                         fontSize: '1.125rem',
                         opacity: puedeFinalizar ? 1 : 0.5,
-                        cursor: puedeFinalizar ? 'pointer' : 'not-allowed'
+                        cursor: puedeFinalizar ? 'pointer' : 'not-allowed',
+                        backgroundColor: '#10b981'
                       }}
                       onClick={finalizarTrabajo}
-                      disabled={!puedeFinalizar}
+                      disabled={!puedeFinalizar || guardando}
                       onMouseEnter={(e) => {
-                        if (puedeFinalizar) {
-                          e.currentTarget.style.backgroundColor = '#2563eb';
+                        if (puedeFinalizar && !guardando) {
+                          e.currentTarget.style.backgroundColor = '#059669';
                         }
                       }}
                       onMouseLeave={(e) => {
-                        if (puedeFinalizar) {
-                          e.currentTarget.style.backgroundColor = '#3b82f6';
+                        if (puedeFinalizar && !guardando) {
+                          e.currentTarget.style.backgroundColor = '#10b981';
                         }
                       }}
                     >
-                      {t.finalizar}
+                      {guardando ? 'Guardando...' : t.finalizar}
                     </button>
                   </div>
                 </>
@@ -2512,29 +2532,56 @@ Color del diente: ${configDetallada.toothColor}
             </div>
           </div>
         )}
+          </div>
+        )}
       </main>
 
       {showFloatingCounter && (
-        <div 
-          style={styles.floatingCounter}
-          onClick={() => {
-            const trabajosContainer = document.getElementById('trabajos-agregados-container');
-            if (trabajosContainer) {
-              trabajosContainer.scrollIntoView({ behavior: 'smooth' });
-            }
-          }}
-          onMouseEnter={(e: any) => {
-            e.currentTarget.style.transform = 'scale(1.1)';
-            e.currentTarget.style.boxShadow = '0 6px 16px rgba(59, 130, 246, 0.4)';
-          }}
-          onMouseLeave={(e: any) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.3)';
-          }}
-          title={`${trabajosAgregados.length} prestaciones agregadas`}
-        >
-          {trabajosAgregados.length}
-        </div>
+        <>
+          {/* Botón flotante para ir a trabajos agregados */}
+          <div
+            style={{
+              ...styles.floatingCounter,
+              bottom: '90px',
+            }}
+            onClick={() => {
+              const container = document.getElementById('trabajos-agregados-container');
+              if (container) container.scrollIntoView({ behavior: 'smooth' });
+            }}
+            onMouseEnter={(e: any) => {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(59, 130, 246, 0.4)';
+            }}
+            onMouseLeave={(e: any) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.3)';
+            }}
+            title={`${trabajosAgregados.length} prestaciones agregadas`}
+          >
+            {trabajosAgregados.length}
+          </div>
+
+          {/* Botón flotante para ir al inicio */}
+          <div
+            style={{
+              ...styles.floatingCounter,
+              backgroundColor: '#10b981',
+              bottom: '20px',
+            }}
+            onClick={scrollAlInicio}
+            onMouseEnter={(e: any) => {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.4)';
+            }}
+            onMouseLeave={(e: any) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)';
+            }}
+            title="Ir al inicio"
+          >
+            ↑
+          </div>
+        </>
       )}
     </div>
   );

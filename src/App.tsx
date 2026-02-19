@@ -32,6 +32,74 @@ interface User {
   telefono?: string;
 }
 
+// ============================================
+// ✅ PROTECTED ROUTE — DEFINIDO FUERA DE App
+// Esto es crítico: si se define dentro de App,
+// React lo trata como un componente nuevo en cada
+// render, lo desmonta/remonta y causa scroll al top.
+// ============================================
+const ProtectedRoute = ({
+  children,
+  allowedRoles = ['admin', 'cliente', 'laboratorista'],
+}: {
+  children: React.ReactNode;
+  allowedRoles?: string[];
+}) => {
+  const [cargando, setCargando] = useState(true);
+  const [usuario, setUsuario] = useState<User | null>(null);
+  const [rol, setRol] = useState<string | null>(null);
+
+  useEffect(() => {
+    const verificarUsuario = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setCargando(false);
+        return;
+      }
+
+      const { data: perfil } = await supabase
+        .from('perfiles_usuarios')
+        .select('rol, laboratorio, telefono')
+        .eq('id', user.id)
+        .single();
+
+      const userData: User = {
+        id: user.id,
+        email: user.email!,
+        nombre: user.user_metadata?.nombre || user.email!.split('@')[0],
+        rol: perfil?.rol || user.user_metadata?.rol || 'cliente',
+        laboratorio: perfil?.laboratorio || user.user_metadata?.laboratorio,
+        telefono: perfil?.telefono || user.user_metadata?.telefono,
+      };
+      setUsuario(userData);
+      setRol(userData.rol);
+      setCargando(false);
+    };
+    verificarUsuario();
+  }, []);
+
+  if (cargando) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        Cargando...
+      </div>
+    );
+  }
+
+  if (!usuario) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!allowedRoles.includes(rol || '')) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// ============================================
+// APP PRINCIPAL
+// ============================================
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -80,7 +148,7 @@ const App: React.FC = () => {
   }, [navigate]);
 
   // ============================================
-  // 2. LISTENER DE AUTENTICACIÓN (CORREGIDO)
+  // 2. LISTENER DE AUTENTICACIÓN
   // ============================================
   useEffect(() => {
     if (authListenerSet || loading) return;
@@ -113,9 +181,8 @@ const App: React.FC = () => {
           }
         }
 
-        // ✅ CORREGIDO: SOLO redirigir al Landing Page con recarga completa
         if (event === 'SIGNED_OUT') {
-          console.log('🔒 Logout detectado - Redirigiendo al Landing Page con recarga completa');
+          console.log('🔒 Logout detectado - Redirigiendo al Landing Page');
           setCurrentUser(null);
           window.location.href = '/';
           return;
@@ -139,65 +206,7 @@ const App: React.FC = () => {
   };
 
   // ============================================
-  // 4. COMPONENTE DE RUTA PROTEGIDA (SIN VALIDACIÓN DE MEMBRESÍA)
-  // ============================================
-  const ProtectedRoute = ({
-    children,
-    allowedRoles = ['admin', 'cliente', 'laboratorista'],
-  }: {
-    children: React.ReactNode;
-    allowedRoles?: string[];
-  }) => {
-    const [cargando, setCargando] = useState(true);
-    const [usuario, setUsuario] = useState<User | null>(null);
-    const [rol, setRol] = useState<string | null>(null);
-
-    useEffect(() => {
-      const verificarUsuario = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          setCargando(false);
-          return;
-        }
-
-        const { data: perfil } = await supabase
-          .from('perfiles_usuarios')
-          .select('rol, laboratorio, telefono')
-          .eq('id', user.id)
-          .single();
-
-        const userData: User = {
-          id: user.id,
-          email: user.email!,
-          nombre: user.user_metadata?.nombre || user.email!.split('@')[0],
-          rol: perfil?.rol || user.user_metadata?.rol || 'cliente',
-          laboratorio: perfil?.laboratorio || user.user_metadata?.laboratorio,
-          telefono: perfil?.telefono || user.user_metadata?.telefono,
-        };
-        setUsuario(userData);
-        setRol(userData.rol);
-        setCargando(false);
-      };
-      verificarUsuario();
-    }, []);
-
-    if (cargando) {
-      return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Cargando...</div>;
-    }
-
-    if (!usuario) {
-      return <Navigate to="/login" replace />;
-    }
-
-    if (!allowedRoles.includes(rol || '')) {
-      return <Navigate to="/dashboard" replace />;
-    }
-
-    return <>{children}</>;
-  };
-
-  // ============================================
-  // 5. LOADER INICIAL
+  // 4. LOADER INICIAL
   // ============================================
   if (loading) {
     return (
@@ -212,7 +221,7 @@ const App: React.FC = () => {
   }
 
   // ============================================
-  // 6. RUTAS
+  // 5. RUTAS
   // ============================================
   return (
     <Routes>
@@ -250,7 +259,7 @@ const App: React.FC = () => {
       <Route path="/crear-trabajo" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><CrearTrabajo onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/clinicas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionClinicas /></ProtectedRoute>} />
       <Route path="/dentistas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionDentistas /></ProtectedRoute>} />
-      <Route path="/laboratoristas" element={<ProtectedRoute allowedRoles={['admin']}><GestionLaboratoristas /></ProtectedRoute>} />
+      <Route path="/laboratoristas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionLaboratoristas onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/control-pagos" element={<ProtectedRoute allowedRoles={['admin']}><ControlPagosManual /></ProtectedRoute>} />
       <Route path="/servicios" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionServicios /></ProtectedRoute>} />
       <Route path="/trabajos" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><GestionTrabajos /></ProtectedRoute>} />

@@ -1,5 +1,5 @@
 // src/components/Header.tsx
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 interface HeaderProps {
@@ -32,6 +32,24 @@ const Header: React.FC<HeaderProps> = ({
   showTitle = false
 }) => {
   const navigate = useNavigate();
+  const [visible, setVisible] = useState(true);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      // Mostrar si subimos o estamos cerca del top (< 10px)
+      if (currentScrollY < 10 || currentScrollY < lastScrollY.current) {
+        setVisible(true);
+      } else {
+        setVisible(false);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // ============================================
   // HANDLE LOGOUT MEJORADO CON FALLBACK
@@ -72,7 +90,9 @@ const Header: React.FC<HeaderProps> = ({
       position: 'sticky' as const,
       top: 0,
       zIndex: 100,
-      height: '64px'
+      height: '64px',
+      transform: visible ? 'translateY(0)' : 'translateY(-100%)',
+      transition: 'transform 0.3s ease',
     },
     leftSection: {
       display: 'flex',

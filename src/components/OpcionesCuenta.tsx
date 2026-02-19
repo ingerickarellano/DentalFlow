@@ -146,7 +146,7 @@ const OpcionesCuenta: React.FC<OpcionesCuentaProps> = ({ onBack }) => {
     container: {
       padding: '20px',
       backgroundColor: '#f8fafc',
-      minHeight: 'calc(100vh - 64px)',
+      minHeight: '100%',
       display: 'flex',
       justifyContent: 'center',
       alignItems: 'flex-start'

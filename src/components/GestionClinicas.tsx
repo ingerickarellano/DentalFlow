@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import Header from '../components/Header'; // Importar el Header
+import Header from '../components/Header';
+import { useMembresia } from '../hooks/useMembresia';
 
 interface GestionClinicasProps {
   onBack?: () => void;
@@ -37,8 +38,10 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
   const [clinicaEditando, setClinicaEditando] = useState<Clinica | null>(null);
   const [cargando, setCargando] = useState(false);
   const [clinicaSeleccionada, setClinicaSeleccionada] = useState<string>('');
-  const [usuario, setUsuario] = useState<any>(null); // Estado para el usuario
-  
+  const [usuario, setUsuario] = useState<any>(null);
+
+  const membresia = useMembresia(usuario?.id);
+
   const [formDataClinica, setFormDataClinica] = useState({
     nombre: '',
     direccion: '',
@@ -60,7 +63,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     try {
       setCargando(true);
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         alert('No hay usuario autenticado');
         navigate('/login');
@@ -68,8 +71,6 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       }
 
       setUsuario(user);
-
-      console.log('Usuario ID:', user.id);
 
       const [clinicasRes, dentistasRes] = await Promise.all([
         supabase
@@ -84,17 +85,8 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
           .order('nombre', { ascending: true })
       ]);
 
-      if (clinicasRes.error) {
-        console.error('Error cargando clínicas:', clinicasRes.error);
-        throw clinicasRes.error;
-      }
-      if (dentistasRes.error) {
-        console.error('Error cargando dentistas:', dentistasRes.error);
-        throw dentistasRes.error;
-      }
-
-      console.log('Clínicas cargadas:', clinicasRes.data?.length);
-      console.log('Dentistas cargados:', dentistasRes.data?.length);
+      if (clinicasRes.error) throw clinicasRes.error;
+      if (dentistasRes.error) throw dentistasRes.error;
 
       setClinicas(clinicasRes.data || []);
       setDentistas(dentistasRes.data || []);
@@ -116,6 +108,33 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     }
   };
 
+  const esAdmin = usuario?.user_metadata?.rol === 'admin' || false;
+  const limiteClinicas = (() => {
+    if (esAdmin) return Infinity;
+    if (membresia.cargando) return 0;
+    switch (membresia.plan) {
+      case 'gratuita': return 3;
+      case 'profesional':
+      case 'empresarial': return Infinity;
+      default: return 0;
+    }
+  })();
+
+  const puedeCrearClinica = !membresia.cargando && (esAdmin || clinicas.length < limiteClinicas);
+
+  const mensajeLimite = (() => {
+    if (membresia.cargando) return 'Verificando plan...';
+    if (esAdmin) return '';
+    if (membresia.plan === 'gratuita') {
+      if (clinicas.length >= 3) {
+        return 'Has alcanzado el límite de 3 clínicas en el plan gratuito. Actualiza tu plan para agregar más.';
+      } else {
+        return `Puedes agregar hasta ${limiteClinicas - clinicas.length} clínica(s) más en tu plan gratuito.`;
+      }
+    }
+    return '';
+  })();
+
   const abrirModalClinica = (clinica?: Clinica) => {
     if (clinica) {
       setClinicaEditando(clinica);
@@ -127,6 +146,10 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
         tipo_retencion: clinica.tipo_retencion || 'sin_retencion'
       });
     } else {
+      if (!puedeCrearClinica && !esAdmin) {
+        alert(mensajeLimite || 'No puedes crear más clínicas en este plan.');
+        return;
+      }
       setClinicaEditando(null);
       setFormDataClinica({
         nombre: '',
@@ -145,7 +168,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       alert('Clínica no encontrada');
       return;
     }
-    
+
     setClinicaSeleccionada(clinicaId);
     setFormDataDentista({
       nombre: '',
@@ -163,7 +186,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
   const guardarClinica = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formDataClinica.nombre.trim()) {
       alert('El nombre de la clínica es requerido');
       return;
@@ -172,15 +195,26 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     try {
       setCargando(true);
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         alert('No hay usuario autenticado');
         return;
       }
 
-      console.log('Guardando clínica para usuario:', user.id);
+      const { count } = await supabase
+        .from('clinicas')
+        .select('*', { count: 'exact', head: true })
+        .eq('usuario_id', user.id);
 
-      // Porcentaje fijo para "Con Retención" - 15.25%
+      const cantidadActual = count || 0;
+      const esAdmin = user.user_metadata?.rol === 'admin';
+      const plan = membresia.plan;
+
+      if (!esAdmin && plan === 'gratuita' && cantidadActual >= 3) {
+        alert('Límite de clínicas alcanzado. No puedes agregar más.');
+        return;
+      }
+
       const PORCENTAJE_RETENCION_FIJO = 15.25;
 
       const clinicaDataForSupabase = {
@@ -189,7 +223,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
         telefono: formDataClinica.telefono.trim(),
         email: formDataClinica.email.trim(),
         tipo_retencion: formDataClinica.tipo_retencion,
-        porcentaje_retencion: formDataClinica.tipo_retencion === 'con_retencion' ? 
+        porcentaje_retencion: formDataClinica.tipo_retencion === 'con_retencion' ?
           PORCENTAJE_RETENCION_FIJO : null,
         usuario_id: user.id
       };
@@ -201,49 +235,29 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
           .eq('id', clinicaEditando.id)
           .eq('usuario_id', user.id);
 
-        if (error) {
-          console.error('Error actualizando clínica:', error);
-          throw error;
-        }
+        if (error) throw error;
 
-        const clinicaDataForState = {
-          nombre: formDataClinica.nombre.trim(),
-          direccion: formDataClinica.direccion.trim(),
-          telefono: formDataClinica.telefono.trim(),
-          email: formDataClinica.email.trim(),
-          tipo_retencion: formDataClinica.tipo_retencion,
-          porcentaje_retencion: formDataClinica.tipo_retencion === 'con_retencion' ? 
-            PORCENTAJE_RETENCION_FIJO : null
-        };
-
-        setClinicas(prev => prev.map(c => 
-          c.id === clinicaEditando.id ? { ...c, ...clinicaDataForState } : c
+        setClinicas(prev => prev.map(c =>
+          c.id === clinicaEditando.id ? { ...c, ...clinicaDataForSupabase, id: c.id } : c
         ));
-        
+
         alert('✅ Clínica actualizada exitosamente');
       } else {
-        console.log('Datos de clínica a insertar:', clinicaDataForSupabase);
-
         const { data, error } = await supabase
           .from('clinicas')
           .insert([clinicaDataForSupabase])
           .select();
 
-        if (error) {
-          console.error('Error insertando clínica:', error);
-          throw error;
-        }
+        if (error) throw error;
 
         if (data && data.length > 0) {
           setClinicas(prev => [data[0], ...prev]);
           alert('✅ Clínica creada exitosamente');
-        } else {
-          throw new Error('No se recibieron datos de respuesta');
         }
       }
 
       cerrarModales();
-      
+
     } catch (error: any) {
       console.error('Error guardando clínica:', error);
       alert(`Error al guardar la clínica: ${error.message}`);
@@ -254,7 +268,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
   const guardarDentista = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formDataDentista.nombre.trim() || !formDataDentista.especialidad.trim()) {
       alert('El nombre y especialidad del dentista son requeridos');
       return;
@@ -268,14 +282,11 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     try {
       setCargando(true);
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         alert('No hay usuario autenticado');
         return;
       }
-
-      console.log('Usuario ID:', user.id);
-      console.log('Clínica seleccionada:', clinicaSeleccionada);
 
       const dentistaData = {
         nombre: formDataDentista.nombre.trim(),
@@ -284,39 +295,22 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
         usuario_id: user.id
       };
 
-      console.log('Datos del dentista a insertar:', dentistaData);
-
       const { data, error } = await supabase
         .from('dentistas')
         .insert([dentistaData])
         .select();
 
-      if (error) {
-        console.error('Error completo de Supabase:', error);
-        
-        if (error.code === '42501') {
-          throw new Error('Permiso denegado. Necesitas configurar las políticas RLS en Supabase.');
-        }
-        
-        throw error;
-      }
+      if (error) throw error;
 
       if (data && data.length > 0) {
         setDentistas(prev => [data[0], ...prev]);
         cerrarModales();
         alert('✅ Dentista agregado exitosamente');
-      } else {
-        throw new Error('No se recibieron datos de respuesta');
       }
-      
+
     } catch (error: any) {
       console.error('Error guardando dentista:', error);
-      
-      if (error.message.includes('RLS') || error.message.includes('policy')) {
-        alert(`❌ Error de permisos: ${error.message}\n\nPor favor, configura las políticas RLS en Supabase para permitir insertar dentistas.`);
-      } else {
-        alert(`Error al guardar el dentista: ${error.message}`);
-      }
+      alert(`Error al guardar el dentista: ${error.message}`);
     } finally {
       setCargando(false);
     }
@@ -329,21 +323,14 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        alert('No hay usuario autenticado');
-        return;
-      }
 
-      const { error: errorDentistas } = await supabase
+      if (!user) return;
+
+      await supabase
         .from('dentistas')
         .delete()
         .eq('clinica_id', clinica.id)
         .eq('usuario_id', user.id);
-
-      if (errorDentistas) {
-        console.error('Error eliminando dentistas:', errorDentistas);
-      }
 
       const { error } = await supabase
         .from('clinicas')
@@ -356,7 +343,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       setClinicas(prev => prev.filter(c => c.id !== clinica.id));
       setDentistas(prev => prev.filter(d => d.clinica_id !== clinica.id));
       alert('✅ Clínica eliminada exitosamente');
-      
+
     } catch (error: any) {
       console.error('Error eliminando clínica:', error);
       alert(`Error al eliminar la clínica: ${error.message}`);
@@ -370,11 +357,8 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        alert('No hay usuario autenticado');
-        return;
-      }
+
+      if (!user) return;
 
       const { error } = await supabase
         .from('dentistas')
@@ -386,7 +370,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
       setDentistas(prev => prev.filter(d => d.id !== dentista.id));
       alert('✅ Dentista eliminado exitosamente');
-      
+
     } catch (error: any) {
       console.error('Error eliminando dentista:', error);
       alert(`Error al eliminar el dentista: ${error.message}`);
@@ -410,6 +394,12 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     return clinica ? clinica.nombre : 'Clínica no encontrada';
   };
 
+  // Función para copiar ID al portapapeles
+  const copiarID = (id: string, tipo: string) => {
+    navigator.clipboard.writeText(id);
+    alert(`✅ ID de ${tipo} copiado al portapapeles`);
+  };
+
   const styles: { [key: string]: React.CSSProperties } = {
     container: {
       padding: '20px',
@@ -417,7 +407,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       minHeight: '100vh',
       maxWidth: '1200px',
       margin: '0 auto',
-      marginTop: '64px' // Añadido para espacio del Header
+      marginTop: '64px'
     },
     header: {
       marginBottom: '30px',
@@ -450,7 +440,13 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       borderRadius: '8px',
       cursor: 'pointer',
       fontWeight: '600',
-      fontSize: '14px'
+      fontSize: '14px',
+      opacity: 1,
+    },
+    addButtonDisabled: {
+      backgroundColor: '#94a3b8',
+      cursor: 'not-allowed',
+      opacity: 0.7,
     },
     secondaryButton: {
       padding: '8px 16px',
@@ -523,6 +519,36 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       display: 'flex',
       alignItems: 'center',
       gap: '6px'
+    },
+    idContainer: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      marginBottom: '10px',
+      padding: '4px 8px',
+      backgroundColor: '#f1f5f9',
+      borderRadius: '4px',
+      fontSize: '12px',
+      fontFamily: 'monospace',
+      color: '#475569'
+    },
+    idText: {
+      fontSize: '12px',
+      color: '#334155',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      maxWidth: '200px'
+    },
+    copyButton: {
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      color: '#3b82f6',
+      fontSize: '14px',
+      padding: '2px 6px',
+      borderRadius: '4px',
+      transition: 'background 0.2s'
     },
     dentistasSection: {
       marginTop: '20px',
@@ -700,12 +726,21 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     radioLabel: {
       fontSize: '14px',
       color: '#374151'
+    },
+    limiteInfo: {
+      fontSize: '14px',
+      color: '#475569',
+      marginTop: '8px',
+      padding: '8px 12px',
+      backgroundColor: '#f1f5f9',
+      borderRadius: '6px',
+      display: 'inline-block'
     }
   };
 
   return (
     <>
-      <Header 
+      <Header
         user={usuario ? {
           id: usuario.id,
           email: usuario.email,
@@ -719,16 +754,28 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
         title="Gestión de Clínicas"
         showTitle={true}
       />
-      
+
       <div style={styles.container}>
         <div style={styles.header}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
             <h1 style={styles.title}>🏥 Gestión de Clínicas</h1>
+            {!esAdmin && !membresia.cargando && (
+              <span style={styles.limiteInfo}>
+                {membresia.plan === 'gratuita'
+                  ? `📊 ${clinicas.length} / 3 clínicas`
+                  : `⭐ Plan ${membresia.plan === 'profesional' ? 'Profesional' : 'Empresarial'} (ilimitado)`}
+              </span>
+            )}
           </div>
-          
-          <button 
+
+          <button
             onClick={() => abrirModalClinica()}
-            style={styles.addButton}
+            style={{
+              ...styles.addButton,
+              ...(!puedeCrearClinica && !esAdmin ? styles.addButtonDisabled : {})
+            }}
+            disabled={!puedeCrearClinica && !esAdmin}
+            title={!puedeCrearClinica && !esAdmin ? mensajeLimite : ''}
           >
             + Agregar Clínica
           </button>
@@ -743,9 +790,13 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                 <p style={{ marginBottom: '20px' }}>
                   No hay clínicas registradas. Haz clic en "Agregar Clínica" para comenzar.
                 </p>
-                <button 
+                <button
                   onClick={() => abrirModalClinica()}
-                  style={styles.addButton}
+                  style={{
+                    ...styles.addButton,
+                    ...(!puedeCrearClinica && !esAdmin ? styles.addButtonDisabled : {})
+                  }}
+                  disabled={!puedeCrearClinica && !esAdmin}
                 >
                   + Agregar Primera Clínica
                 </button>
@@ -757,7 +808,53 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                     <div style={styles.clinicaHeader}>
                       <div style={{ flex: 1 }}>
                         <h3 style={styles.clinicaNombre}>{clinica.nombre}</h3>
-                        
+{/* ID corto de la clínica */}
+<div style={{
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  marginBottom: '10px',
+  padding: '4px 8px',
+  backgroundColor: '#f1f5f9',
+  borderRadius: '4px',
+  fontSize: '12px',
+  fontFamily: 'monospace',
+  color: '#475569'
+}}>
+  <span>🏥 CLI-{clinica.id.slice(-4)}</span>
+  <button
+    onClick={() => {
+      navigator.clipboard.writeText(clinica.id);
+      alert('ID completo copiado');
+    }}
+    style={{
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      color: '#3b82f6',
+      fontSize: '14px',
+      padding: '2px 6px',
+      borderRadius: '4px'
+    }}
+    title="Copiar ID completo"
+  >
+    📋
+  </button>
+</div>
+                        {/* --- ID de la clínica visible --- */}
+                        <div style={styles.idContainer}>
+                          <span style={styles.idText}>🆔 ID: {clinica.id.substring(0, 8)}…</span>
+                          <button
+                            style={styles.copyButton}
+                            onClick={() => copiarID(clinica.id, 'clínica')}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e2e8f0')}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                            title="Copiar ID completo"
+                          >
+                            📋
+                          </button>
+                        </div>
+
                         {clinica.tipo_retencion === 'con_retencion' ? (
                           <div style={styles.retencionInfo}>
                             🏛️ Con Retención (15.25%) - La clínica retiene y declara
@@ -767,7 +864,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                             💼 Sin Retención - Tú declaras el PPM al SII
                           </div>
                         )}
-                        
+
                         {clinica.direccion && (
                           <div style={styles.clinicaInfo}>📍 {clinica.direccion}</div>
                         )}
@@ -784,7 +881,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                       <div style={styles.dentistasTitle}>
                         👨‍⚕️ Dentistas ({dentistasPorClinica(clinica.id).length})
                       </div>
-                      
+
                       {dentistasPorClinica(clinica.id).length === 0 ? (
                         <p style={{ color: '#9ca3af', fontSize: '14px', textAlign: 'center', padding: '10px' }}>
                           No hay dentistas asignados
@@ -796,7 +893,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                               <span style={styles.dentistaNombre}>{dentista.nombre}</span>
                               <span style={styles.dentistaEspecialidad}>{dentista.especialidad}</span>
                             </div>
-                            <button 
+                            <button
                               onClick={() => eliminarDentista(dentista)}
                               style={styles.deleteButton}
                             >
@@ -805,8 +902,8 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                           </div>
                         ))
                       )}
-                      
-                      <button 
+
+                      <button
                         onClick={() => abrirModalDentista(clinica.id)}
                         style={styles.secondaryButton}
                       >
@@ -815,13 +912,13 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                     </div>
 
                     <div style={styles.cardActions}>
-                      <button 
+                      <button
                         onClick={() => abrirModalClinica(clinica)}
                         style={styles.editButton}
                       >
                         ✏️ Editar Clínica
                       </button>
-                      <button 
+                      <button
                         onClick={() => eliminarClinica(clinica)}
                         style={styles.deleteButton}
                       >
@@ -835,6 +932,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
           </div>
         )}
 
+        {/* Modales existentes... (sin cambios) */}
         {modalClinicaAbierto && (
           <div style={styles.modalOverlay}>
             <div style={styles.modalContent}>
@@ -842,14 +940,9 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                 <h2 style={styles.modalTitle}>
                   {clinicaEditando ? '✏️ Editar Clínica' : '🏥 Agregar Nueva Clínica'}
                 </h2>
-                <button 
-                  onClick={cerrarModales}
-                  style={styles.closeButton}
-                >
-                  ✕
-                </button>
+                <button onClick={cerrarModales} style={styles.closeButton}>✕</button>
               </div>
-              
+
               <form onSubmit={guardarClinica}>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Nombre de la Clínica *</label>
@@ -898,7 +991,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
                 <div style={styles.retencionSection}>
                   <div style={styles.retencionTitle}>📋 Configuración de Retención PPM/SII</div>
-                  
+
                   <div style={styles.radioGroup}>
                     <label style={styles.radioOption}>
                       <input
@@ -914,7 +1007,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                         <small>Tú recibes el 100% del pago y te encargas de declarar y pagar el PPM (Pago Provisional Mensual) al SII.</small>
                       </span>
                     </label>
-                    
+
                     <label style={styles.radioOption}>
                       <input
                         type="radio"
@@ -933,19 +1026,10 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                 </div>
 
                 <div style={styles.buttonGroup}>
-                  <button 
-                    type="button"
-                    onClick={cerrarModales}
-                    style={styles.cancelButton}
-                    disabled={cargando}
-                  >
+                  <button type="button" onClick={cerrarModales} style={styles.cancelButton} disabled={cargando}>
                     Cancelar
                   </button>
-                  <button 
-                    type="submit"
-                    style={styles.submitButton}
-                    disabled={cargando}
-                  >
+                  <button type="submit" style={styles.submitButton} disabled={cargando}>
                     {cargando ? 'Guardando...' : (clinicaEditando ? 'Actualizar' : 'Guardar')} Clínica
                   </button>
                 </div>
@@ -959,18 +1043,13 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
             <div style={styles.modalContent}>
               <div style={styles.modalHeader}>
                 <h2 style={styles.modalTitle}>👨‍⚕️ Agregar Dentista</h2>
-                <button 
-                  onClick={cerrarModales}
-                  style={styles.closeButton}
-                >
-                  ✕
-                </button>
+                <button onClick={cerrarModales} style={styles.closeButton}>✕</button>
               </div>
 
               <div style={styles.clinicaInfoHeader}>
                 Para: {getNombreClinicaSeleccionada()}
               </div>
-              
+
               <form onSubmit={guardarDentista}>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>Nombre del Dentista *</label>
@@ -997,19 +1076,10 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                 </div>
 
                 <div style={styles.buttonGroup}>
-                  <button 
-                    type="button"
-                    onClick={cerrarModales}
-                    style={styles.cancelButton}
-                    disabled={cargando}
-                  >
+                  <button type="button" onClick={cerrarModales} style={styles.cancelButton} disabled={cargando}>
                     Cancelar
                   </button>
-                  <button 
-                    type="submit"
-                    style={styles.submitButton}
-                    disabled={cargando}
-                  >
+                  <button type="submit" style={styles.submitButton} disabled={cargando}>
                     {cargando ? 'Guardando...' : 'Agregar Dentista'}
                   </button>
                 </div>

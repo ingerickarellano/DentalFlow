@@ -6,4 +6,16 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: #f8fafc;
+
+  /* ✅ FIX: Compensa el header sticky (64px) al hacer scroll automático
+     hacia inputs/elementos enfocados. Sin esto, el browser sube de más
+     y el elemento queda tapado por el header o dispara scroll inesperado. */
+  scroll-padding-top: 80px;
+}
+
+/* Evita que el foco en inputs cause scroll agresivo en navegadores WebKit (Brave, Chrome, Safari) */
+input:focus,
+select:focus,
+textarea:focus {
+  scroll-margin-top: 80px;
 }
