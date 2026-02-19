@@ -339,14 +339,7 @@
       
       // Mejorar performance en móviles
       document.addEventListener('DOMContentLoaded', function() {
-        // Prevenir zoom en inputs
-        document.addEventListener('focusin', function(e) {
-          if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
-            setTimeout(function() {
-              window.scrollTo(0, 0);
-            }, 100);
-          }
-        });
+        // (bloque scrollTo eliminado - causaba scroll al top en cada input)
       });
       
       // Función global para instalar PWA
@@ -476,16 +469,5 @@
         }
       });
     </script>
-    
-    <!--
-      Este archivo HTML es una plantilla.
-      Si lo abres directamente en el navegador, verás una página en blanco.
-      
-      Puedes agregar webfonts, meta tags o analytics a este archivo.
-      El paso de construcción colocará los scripts empaquetados dentro de la etiqueta <body>.
-      
-      Para comenzar el desarrollo, ejecuta `npm start` o `yarn start`.
-      Para crear un bundle de producción, usa `npm run build` o `yarn build`.
-    -->
-  </body>
+      </body>
 </html>
