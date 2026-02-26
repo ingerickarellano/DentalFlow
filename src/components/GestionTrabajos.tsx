@@ -1,4 +1,3 @@
-// GestionTrabajos.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -83,9 +82,8 @@ interface Filtros {
   dentistaId: string;
 }
 
-// Interfaz para trabajo agrupado (varios trabajos duplicados en uno)
 interface TrabajoAgrupado extends Omit<Trabajo, 'id' | 'servicios' | 'precio_total'> {
-  ids: string[]; // IDs de los trabajos originales que se agrupan
+  ids: string[];
   servicios: Array<{
     servicio_id: string;
     cantidad: number;
@@ -95,6 +93,45 @@ interface TrabajoAgrupado extends Omit<Trabajo, 'id' | 'servicios' | 'precio_tot
     nota_especial?: string;
   }>;
   precio_total: number;
+}
+
+interface OrdenTrabajo {
+  id: string;
+  trabajo_id: string;
+  usuario_id: string;
+  protesista_nombre: string;
+  doctor_nombre: string;
+  direccion: string;
+  cp: string;
+  telefono: string;
+  analisis_impresion: string;
+  analisis_modelo: string;
+  aporta_registros: boolean;
+  cuales_registros: string;
+  articulado: string;
+  metalica: boolean;
+  estetica: boolean;
+  especificaciones: string;
+  aleacion: string;
+  material_estetico: string;
+  tipo_pontico: string;
+  color: string;
+  protesis_removible: boolean;
+  protesis_total: boolean;
+  protesis_parcial: boolean;
+  removable: boolean;
+  diseno_esqueleto: string;
+  ortodoncia_superior: boolean;
+  ortodoncia_inferior: boolean;
+  aparato_realizar: string;
+  tipo_yeso: string;
+  firma: string;
+  fecha_entrega: string;
+  costo_final: number | null;
+  piezas: Record<number, {
+    superficies: Record<string, 'incrustacion' | 'corona' | 'puente' | null>;
+  }>;
+  created_at: string;
 }
 
 const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogout }) => {
@@ -122,7 +159,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     dentistaId: 'todos'
   });
 
-  // Estados para la edición de servicios
   const [serviciosEditando, setServiciosEditando] = useState<TrabajoAgrupado['servicios']>([]);
   const [busquedaServicio, setBusquedaServicio] = useState('');
   const [categoriaFiltro, setCategoriaFiltro] = useState('todos');
@@ -218,7 +254,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     setCerrandoSesion(false);
   };
 
-  // Filtrar trabajos
   const trabajosFiltrados = trabajos.filter(trabajo => {
     const filtroClinica = filtros.clinicaId === 'todas' || trabajo.clinica_id === filtros.clinicaId;
     const filtroEstado = filtros.estado === 'todos' || trabajo.estado === filtros.estado;
@@ -239,12 +274,10 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     return filtroClinica && filtroEstado && filtroPaciente && filtroFecha && filtroLaboratorista && filtroDentista;
   });
 
-  // Función de agrupación mejorada
   const agruparTrabajosDuplicados = (trabajos: Trabajo[]): TrabajoAgrupado[] => {
     const grupos: Record<string, TrabajoAgrupado> = {};
 
     trabajos.forEach(t => {
-      // Normalizamos los servicios para crear una clave: ignoramos cantidades y precios, solo estructura
       const serviciosNorm = [...t.servicios]
         .map(s => ({
           servicio_id: s.servicio_id,
@@ -267,7 +300,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         const grupo = grupos[key];
         grupo.ids.push(t.id);
         grupo.precio_total += t.precio_total;
-        // Sumar servicios
         t.servicios.forEach(s => {
           const existente = grupo.servicios.find(
             g => g.servicio_id === s.servicio_id &&
@@ -289,7 +321,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
 
   const trabajosAgrupados = agruparTrabajosDuplicados(trabajosFiltrados);
 
-  // Agrupar por clínica y paciente (sobre los trabajos agrupados)
   const trabajosPorClinicaYPaciente = trabajosAgrupados.reduce((acc, trabajo) => {
     const clinicaId = trabajo.clinica_id;
     const pacienteNombre = trabajo.paciente;
@@ -298,7 +329,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     if (!acc[clinicaId][pacienteNombre]) {
       acc[clinicaId][pacienteNombre] = {
         paciente: pacienteNombre,
-        trabajos: [] // aquí guardamos los trabajos agrupados
+        trabajos: []
       };
     }
     acc[clinicaId][pacienteNombre].trabajos.push(trabajo);
@@ -466,7 +497,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     }
   };
 
-  // Funciones para edición de servicios
   const eliminarServicioEditando = (index: number) => {
     setServiciosEditando(prev => prev.filter((_, i) => i !== index));
   };
@@ -483,7 +513,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       nota_especial: nuevaNotaEspecial || undefined
     };
     setServiciosEditando(prev => [...prev, nuevo]);
-    // Reset campos
     setNuevoServicioSeleccionado(null);
     setNuevaCantidad(1);
     setNuevaPieza('');
@@ -498,7 +527,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       const primerId = trabajoEditando.ids[0];
       const otrosIds = trabajoEditando.ids.slice(1);
 
-      // Actualizar el primer trabajo
       const { error: errorUpdate } = await supabase
         .from('trabajos')
         .update({
@@ -508,7 +536,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         .eq('id', primerId);
       if (errorUpdate) throw errorUpdate;
 
-      // Eliminar los trabajos duplicados restantes
       if (otrosIds.length > 0) {
         const { error: errorDelete } = await supabase
           .from('trabajos')
@@ -517,7 +544,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         if (errorDelete) throw errorDelete;
       }
 
-      // Actualizar estado local: mantener solo el primer trabajo actualizado, eliminar los demás
       setTrabajos(prev => {
         const nuevos = prev.filter(t => !otrosIds.includes(t.id));
         return nuevos.map(t => t.id === primerId ? { ...t, servicios: serviciosEditando, precio_total: nuevoTotal } : t);
@@ -533,116 +559,334 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     }
   };
 
-  const imprimirTrabajo = (trabajo: TrabajoAgrupado) => {
+  // ========== FUNCIÓN DE IMPRESIÓN MEJORADA (ESTILO LABORATORIO) ==========
+  const generarHTMLImpresion = (trabajo: TrabajoAgrupado, orden?: OrdenTrabajo, config?: any) => {
     const trabajoIndividual = trabajos.find(t => t.id === trabajo.ids[0]);
-    if (!trabajoIndividual) return;
-
     const clinica = clinicas.find(c => c.id === trabajo.clinica_id);
     const dentista = dentistas.find(d => d.id === trabajo.dentista_id);
     const laboratorista = laboratoristas.find(l => l.id === trabajo.laboratorista_id);
 
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Hoja de Trabajo - ${trabajo.paciente}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 30px; }
-            .patient-info { margin-bottom: 30px; }
-            .services-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            .services-table th, .services-table td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-            .services-table th { background-color: #f8f9fa; }
-            .total { text-align: right; font-size: 18px; font-weight: bold; margin-top: 30px; }
-            .notes { margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #007bff; }
-            .qr-code { text-align: center; margin: 20px 0; }
-            @media print {
-              body { padding: 0; }
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>HOJA DE TRABAJO DENTAL</h1>
-            <p><strong>Fecha:</strong> ${new Date(trabajo.fecha_creacion).toLocaleDateString()}</p>
-            <p><strong>Código Trabajo:</strong> ${trabajo.ids[0]}</p>
-          </div>
-          
-          <div class="patient-info">
-            <h2>Información del Paciente</h2>
-            <p><strong>Nombre:</strong> ${trabajo.paciente}</p>
-            <p><strong>Clínica:</strong> ${clinica?.nombre || 'No especificada'}</p>
-            <p><strong>Dentista:</strong> ${dentista?.nombre || 'No especificado'}</p>
-            <p><strong>Laboratorista:</strong> ${laboratorista?.nombre || 'No asignado'}</p>
-            <p><strong>Estado:</strong> ${trabajo.estado}</p>
-            <p><strong>Fecha Entrega Estimada:</strong> ${trabajo.fecha_entrega_estimada ? new Date(trabajo.fecha_entrega_estimada).toLocaleDateString() : 'Sin fecha'}</p>
-          </div>
-          
-          <h2>Prestaciones del Trabajo</h2>
-          <table class="services-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Servicio</th>
-                <th>Cantidad</th>
-                <th>Pieza Dental</th>
-                <th>Precio Unitario</th>
-                <th>Subtotal</th>
-                <th>Notas Especiales</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${trabajo.servicios?.map((servicio, index) => {
-        const servicioInfo = servicios.find(s => s.id === servicio.servicio_id);
-        return `
-                  <tr>
-                    <td>${index + 1}</td>
-                    <td>${servicioInfo?.nombre || servicio.nombre || 'Servicio'}</td>
-                    <td>${servicio.cantidad}</td>
-                    <td>${servicio.pieza_dental || '-'}</td>
-                    <td>$${(servicio.precio / servicio.cantidad).toLocaleString()}</td>
-                    <td>$${servicio.precio.toLocaleString()}</td>
-                    <td>${servicio.nota_especial || '-'}</td>
-                  </tr>
-                `;
-      }).join('') || '<tr><td colspan="7" style="text-align:center;">No hay servicios</td></tr>'}
-            </tbody>
-          </table>
-          
-          <div class="total">
-            <p>TOTAL: $${trabajo.precio_total.toLocaleString()}</p>
-          </div>
-          
-          <div class="qr-code">
-            <h3>Código QR para Entrega:</h3>
-            <div style="display: inline-block; padding: 10px; background: white; border: 1px solid #ddd;">
-              <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${trabajo.ids[0]}" alt="QR de Entrega" />
-            </div>
-            <p style="font-size: 12px; color: #666;">Escanear para registrar entrega</p>
-          </div>
-          
-          ${trabajo.notas ? `
-            <div class="notes">
-              <h3>Notas Generales:</h3>
-              <p>${trabajo.notas}</p>
-            </div>
+    // Tabla de servicios (siempre visible)
+    const serviciosRows = trabajo.servicios?.map((servicio, index) => {
+      const servicioInfo = servicios.find(s => s.id === servicio.servicio_id);
+      return `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${servicioInfo?.nombre || servicio.nombre || 'Servicio'}</td>
+          <td>${servicio.cantidad}</td>
+          <td>${servicio.pieza_dental || '-'}</td>
+          <td class="right">$${(servicio.precio / servicio.cantidad).toLocaleString()}</td>
+          <td class="right">$${servicio.precio.toLocaleString()}</td>
+          <td>${servicio.nota_especial || '-'}</td>
+        </tr>
+      `;
+    }).join('') || '<tr><td colspan="7" class="text-center">No hay servicios</td></tr>';
+
+    // Secciones de la orden (si existe)
+    let seccionesHTML = '';
+    if (orden) {
+      // Materiales
+      const materiales = `
+        <div class="section">
+          <h4>Materiales</h4>
+          <p><span class="label">Aleación:</span> ${orden.aleacion || '-'}</p>
+          <p><span class="label">Material estético:</span> ${orden.material_estetico || '-'}</p>
+          <p><span class="label">Tipo de póntico:</span> ${orden.tipo_pontico || '-'}</p>
+          <p><span class="label">Color:</span> ${orden.color || '-'}</p>
+        </div>
+      `;
+
+      // Análisis
+      const analisis = `
+        <div class="section">
+          <h4>Análisis</h4>
+          <p><span class="label">Impresión:</span> ${orden.analisis_impresion || '-'}</p>
+          <p><span class="label">Modelo:</span> ${orden.analisis_modelo || '-'}</p>
+          <p><span class="label">Registros:</span> ${orden.aporta_registros ? 'Sí' + (orden.cuales_registros ? ': ' + orden.cuales_registros : '') : 'No'}</p>
+        </div>
+      `;
+
+      // Articulación
+      const articulacion = `
+        <div class="section">
+          <h4>Articulación</h4>
+          <p><span class="label">Tipo:</span> ${orden.articulado || '-'}</p>
+          <p><span class="label">Características:</span> ${orden.metalica ? 'Metálica ' : ''}${orden.estetica ? 'Estética' : '-'}</p>
+          <p><span class="label">Especificaciones:</span> ${orden.especificaciones || '-'}</p>
+        </div>
+      `;
+
+      // Prótesis removible
+      const protesisRemovible = `
+        <div class="section">
+          <h4>Prótesis removible</h4>
+          <p><span class="label">Removible:</span> ${orden.protesis_removible ? 'Sí' : 'No'}</p>
+          ${orden.protesis_removible ? `
+            <p><span class="label">Total:</span> ${orden.protesis_total ? 'Sí' : 'No'}</p>
+            <p><span class="label">Parcial:</span> ${orden.protesis_parcial ? 'Sí' : 'No'}</p>
+            <p><span class="label">Removable:</span> ${orden.removable ? 'Sí' : 'No'}</p>
+            <p><span class="label">Diseño esqueleto:</span> ${orden.diseno_esqueleto || '-'}</p>
           ` : ''}
-          
-          <div class="no-print" style="margin-top: 40px; text-align: center;">
-            <button onclick="window.print()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
-              🖨️ Imprimir
-            </button>
-            <button onclick="window.close()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 10px;">
-              Cerrar
-            </button>
+        </div>
+      `;
+
+      // Ortodoncia
+      const ortodoncia = `
+        <div class="section">
+          <h4>Ortodoncia</h4>
+          <p><span class="label">Superior:</span> ${orden.ortodoncia_superior ? 'Sí' : 'No'}</p>
+          <p><span class="label">Inferior:</span> ${orden.ortodoncia_inferior ? 'Sí' : 'No'}</p>
+          <p><span class="label">Aparato:</span> ${orden.aparato_realizar || '-'}</p>
+        </div>
+      `;
+
+      // Finalización
+      const finalizacion = `
+        <div class="section">
+          <h4>Finalización</h4>
+          <p><span class="label">Yeso:</span> ${orden.tipo_yeso || '-'}</p>
+          <p><span class="label">Fecha entrega:</span> ${orden.fecha_entrega ? new Date(orden.fecha_entrega).toLocaleDateString() : '-'}</p>
+          <p><span class="label">Costo final:</span> $${orden.costo_final?.toLocaleString() || trabajo.precio_total.toLocaleString()}</p>
+          <p><span class="label">Firma:</span> ${orden.firma || '-'}</p>
+        </div>
+      `;
+
+      // Piezas seleccionadas
+      const piezasHTML = Object.entries(orden.piezas || {})
+        .map(([num, p]: [string, any]) => {
+          const superficiesActivas = Object.entries(p.superficies || {})
+            .filter(([_, tipo]) => tipo !== null)
+            .map(([sup, tipo]) => {
+              let tipoTexto = '';
+              if (tipo === 'incrustacion') tipoTexto = 'Incrustación';
+              else if (tipo === 'corona') tipoTexto = 'Corona';
+              else if (tipo === 'puente') tipoTexto = 'Puente';
+              return `${sup}: ${tipoTexto}`;
+            })
+            .join(', ');
+          if (superficiesActivas.length === 0) return null;
+          return `<p><span class="label">Diente ${num}:</span> ${superficiesActivas}</p>`;
+        })
+        .filter(Boolean)
+        .join('') || '<p>No hay piezas seleccionadas</p>';
+
+      // Ensamblar todas las secciones en un grid de 2 columnas
+      seccionesHTML = `
+        <div style="margin-top: 20px; border-top: 1px solid #000; padding-top: 10px;">
+          <h3 style="margin: 5px 0; font-size: 14px; font-weight: bold;">DETALLES DE LA ORDEN</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            ${materiales}
+            ${analisis}
+            ${articulacion}
+            ${protesisRemovible}
+            ${ortodoncia}
+            ${finalizacion}
           </div>
-        </body>
-        </html>
-      `);
-      printWindow.document.close();
+          <div style="margin-top: 10px; border-top: 1px solid #ccc; padding-top: 5px;">
+            <h4 style="margin: 5px 0; font-size: 13px; font-weight: bold;">Piezas seleccionadas</h4>
+            ${piezasHTML}
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${orden ? 'Orden de Trabajo' : 'Hoja de Trabajo'} - ${trabajo.paciente}</title>
+        <style>
+          body {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.3;
+            color: #000;
+            background: #fff;
+            margin: 0;
+            padding: 10px;
+          }
+          .header {
+            text-align: center;
+            border-bottom: 2px solid #000;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+          }
+          .header h1 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: bold;
+            text-transform: uppercase;
+          }
+          .header p {
+            margin: 2px 0;
+            font-size: 11px;
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+          }
+          .info-item {
+            margin: 2px 0;
+          }
+          .label {
+            font-weight: bold;
+            display: inline-block;
+            min-width: 100px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+          }
+          th, td {
+            border: 1px solid #000;
+            padding: 4px 6px;
+            text-align: left;
+          }
+          th {
+            background-color: #eee;
+            font-weight: bold;
+          }
+          .right {
+            text-align: right;
+          }
+          .text-center {
+            text-align: center;
+          }
+          .total {
+            text-align: right;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 5px 0;
+          }
+          .section {
+            margin-bottom: 8px;
+          }
+          .section h4 {
+            margin: 5px 0 2px;
+            font-size: 13px;
+            font-weight: bold;
+            text-decoration: underline;
+          }
+          .section p {
+            margin: 2px 0;
+          }
+          .qr-code {
+            text-align: center;
+            margin: 10px 0;
+          }
+          .footer {
+            margin-top: 10px;
+            text-align: center;
+            font-size: 10px;
+            border-top: 1px solid #000;
+            padding-top: 5px;
+          }
+          .no-print {
+            display: none;
+          }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${config?.nombre_laboratorio || 'LABORATORIO DENTAL'}</h1>
+          <p>${config?.direccion || ''} | Tel: ${config?.telefono || ''} | ${config?.email || ''}</p>
+        </div>
+
+        <div class="info-grid">
+          <div>
+            <div class="info-item"><span class="label">Paciente:</span> ${trabajo.paciente}</div>
+            <div class="info-item"><span class="label">Clínica:</span> ${clinica?.nombre || '-'}</div>
+            <div class="info-item"><span class="label">Dentista:</span> ${dentista?.nombre || '-'}</div>
+          </div>
+          <div>
+            <div class="info-item"><span class="label">Laboratorista:</span> ${laboratorista?.nombre || 'No asignado'}</div>
+            <div class="info-item"><span class="label">Fecha creación:</span> ${new Date(trabajo.fecha_creacion).toLocaleDateString()}</div>
+            <div class="info-item"><span class="label">Entrega estimada:</span> ${trabajo.fecha_entrega_estimada ? new Date(trabajo.fecha_entrega_estimada).toLocaleDateString() : '-'}</div>
+            <div class="info-item"><span class="label">Estado:</span> ${trabajo.estado}</div>
+          </div>
+        </div>
+
+        <h3 style="margin: 5px 0; font-size: 14px; font-weight: bold;">PRESTACIONES</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Servicio</th>
+              <th>Cant.</th>
+              <th>Pieza</th>
+              <th>P. Unit.</th>
+              <th>Subtotal</th>
+              <th>Notas</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${serviciosRows}
+          </tbody>
+        </table>
+
+        <div class="total">
+          TOTAL: $${trabajo.precio_total.toLocaleString()}
+        </div>
+
+        ${seccionesHTML}
+
+        ${trabajo.notas ? `
+          <div style="margin-top: 10px;">
+            <h4 style="margin: 5px 0; font-size: 13px; font-weight: bold;">Notas</h4>
+            <p>${trabajo.notas}</p>
+          </div>
+        ` : ''}
+
+        <div class="qr-code">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${trabajo.ids[0]}" alt="QR" />
+          <p style="font-size: 9px;">ID: ${trabajo.ids[0].slice(0, 8)}</p>
+        </div>
+
+        <div class="footer">
+          <p>Documento generado el ${new Date().toLocaleDateString()} - ID Trabajo: ${trabajo.ids[0]}</p>
+          <div class="no-print">
+            <button onclick="window.print()">🖨️ Imprimir</button>
+            <button onclick="window.close()">❌ Cerrar</button>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
+  const imprimirTrabajo = async (trabajo: TrabajoAgrupado) => {
+    try {
+      setCargando(true);
+      const { data: orden } = await supabase
+        .from('ordenes_trabajo')
+        .select('*')
+        .eq('trabajo_id', trabajo.ids[0])
+        .maybeSingle();
+
+      const { data: config } = await supabase
+        .from('configuracion_laboratorio')
+        .select('*')
+        .eq('usuario_id', user?.id || '')
+        .maybeSingle();
+
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        const html = generarHTMLImpresion(trabajo, orden || undefined, config);
+        printWindow.document.write(html);
+        printWindow.document.close();
+      }
+    } catch (error) {
+      console.error('Error al imprimir:', error);
+      alert('Error al generar la vista de impresión');
+    } finally {
+      setCargando(false);
     }
   };
 
@@ -684,7 +928,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     alert(`✅ ID de ${tipo} copiado al portapapeles`);
   };
 
-  // Estilos actualizados para vista compacta tipo lista
   const styles = {
     container: {
       minHeight: '100vh',
@@ -692,13 +935,11 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       color: '#1e293b',
       fontFamily: "'Inter', sans-serif",
     } as React.CSSProperties,
-
     mainContent: {
       padding: '2rem',
       maxWidth: '1400px',
       margin: '0 auto',
     } as React.CSSProperties,
-
     header: {
       display: 'flex',
       justifyContent: 'space-between',
@@ -707,7 +948,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       paddingBottom: '1.5rem',
       borderBottom: '1px solid #e2e8f0'
     } as React.CSSProperties,
-
     title: {
       fontSize: '1.75rem',
       fontWeight: '700',
@@ -717,12 +957,10 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       alignItems: 'center',
       gap: '0.75rem'
     } as React.CSSProperties,
-
     subtitle: {
       color: '#64748b',
       fontSize: '1rem'
     } as React.CSSProperties,
-
     button: {
       backgroundColor: '#3b82f6',
       color: 'white',
@@ -737,7 +975,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       alignItems: 'center',
       gap: '0.5rem'
     } as React.CSSProperties,
-
     buttonSecondary: {
       backgroundColor: 'white',
       color: '#3b82f6',
@@ -749,7 +986,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       cursor: 'pointer',
       transition: 'all 0.2s'
     } as React.CSSProperties,
-
     buttonSmall: {
       backgroundColor: '#f8fafc',
       color: '#64748b',
@@ -761,7 +997,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       cursor: 'pointer',
       transition: 'all 0.2s'
     } as React.CSSProperties,
-
     filtrosContainer: {
       backgroundColor: 'white',
       padding: '1.5rem',
@@ -770,17 +1005,14 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       border: '1px solid #e2e8f0',
       boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
     } as React.CSSProperties,
-
     filtrosGrid: {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
       gap: '1rem'
     } as React.CSSProperties,
-
     formGroup: {
       marginBottom: '0.75rem'
     } as React.CSSProperties,
-
     label: {
       display: 'block',
       color: '#1e293b',
@@ -788,7 +1020,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       fontWeight: '500',
       marginBottom: '0.375rem'
     } as React.CSSProperties,
-
     select: {
       width: '100%',
       padding: '0.625rem 0.75rem',
@@ -799,7 +1030,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       cursor: 'pointer',
       transition: 'border-color 0.2s'
     } as React.CSSProperties,
-
     input: {
       width: '100%',
       padding: '0.625rem 0.75rem',
@@ -808,14 +1038,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       fontSize: '0.875rem',
       backgroundColor: 'white'
     } as React.CSSProperties,
-
     statsGrid: {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
       gap: '1rem',
       marginBottom: '2rem'
     } as React.CSSProperties,
-
     statCard: {
       backgroundColor: 'white',
       padding: '1.25rem',
@@ -825,20 +1053,16 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       transition: 'all 0.2s',
       boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
     } as React.CSSProperties,
-
     statNumber: {
       fontSize: '1.75rem',
       fontWeight: '700',
       margin: '0.5rem 0'
     } as React.CSSProperties,
-
     statLabel: {
       fontSize: '0.875rem',
       fontWeight: '500',
       color: '#64748b'
     } as React.CSSProperties,
-
-    // Estilos para la vista agrupada compacta
     clinicaSection: {
       backgroundColor: 'white',
       borderRadius: '0.75rem',
@@ -847,7 +1071,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       border: '1px solid #e2e8f0',
       boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
     } as React.CSSProperties,
-
     clinicaHeader: {
       display: 'flex',
       justifyContent: 'space-between',
@@ -856,19 +1079,16 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       paddingBottom: '0.5rem',
       borderBottom: '2px solid #3b82f6'
     } as React.CSSProperties,
-
     clinicaNombre: {
       fontSize: '1.5rem',
       fontWeight: '700',
       color: '#1e293b'
     } as React.CSSProperties,
-
     pacienteSubsection: {
       marginBottom: '1rem',
       paddingLeft: '0.5rem',
       borderLeft: '2px solid #94a3b8'
     } as React.CSSProperties,
-
     pacienteHeader: {
       fontSize: '1rem',
       fontWeight: '600',
@@ -878,8 +1098,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       alignItems: 'center',
       gap: '0.5rem'
     } as React.CSSProperties,
-
-    // Tarjeta de trabajo en formato fila
     trabajoCard: {
       display: 'flex',
       alignItems: 'center',
@@ -890,20 +1108,17 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       borderRadius: '0.5rem',
       marginBottom: '0.5rem',
     } as React.CSSProperties,
-
     trabajoColumn: {
       flex: 1,
       minWidth: 0,
       fontSize: '0.875rem',
     } as React.CSSProperties,
-
     trabajoLabel: {
       fontSize: '0.7rem',
       color: '#64748b',
       textTransform: 'uppercase',
       marginBottom: '0.25rem',
     } as React.CSSProperties,
-
     trabajoValue: {
       fontWeight: '500',
       color: '#1e293b',
@@ -911,13 +1126,11 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       overflow: 'hidden',
       textOverflow: 'ellipsis',
     } as React.CSSProperties,
-
     actionButtons: {
       display: 'flex',
       gap: '0.25rem',
       flexShrink: 0,
     } as React.CSSProperties,
-
     actionIcon: {
       background: 'none',
       border: 'none',
@@ -927,7 +1140,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       borderRadius: '0.25rem',
       transition: 'background 0.2s',
     } as React.CSSProperties,
-
     estadoDropdown: {
       padding: '0.25rem 0.5rem',
       borderRadius: '0.375rem',
@@ -937,7 +1149,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       cursor: 'pointer',
       width: '110px',
     } as React.CSSProperties,
-
     emptyState: {
       textAlign: 'center',
       color: '#64748b',
@@ -946,7 +1157,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       borderRadius: '0.75rem',
       border: '2px dashed #cbd5e1'
     } as React.CSSProperties,
-
     modalOverlay: {
       position: 'fixed',
       top: 0,
@@ -960,7 +1170,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       zIndex: 1000,
       backdropFilter: 'blur(4px)'
     } as React.CSSProperties,
-
     modalContent: {
       backgroundColor: 'white',
       padding: '2rem',
@@ -971,7 +1180,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       overflow: 'auto',
       boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
     } as React.CSSProperties,
-
     qrModalContent: {
       backgroundColor: 'white',
       padding: '2rem',
@@ -981,7 +1189,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       textAlign: 'center' as const,
       boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
     } as React.CSSProperties,
-
     modalClose: {
       float: 'right',
       background: 'none',
@@ -1005,7 +1212,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       />
 
       <div style={styles.mainContent}>
-        {/* HEADER */}
         <div style={styles.header}>
           <div>
             <h1 style={styles.title}>🔧 Gestión de Trabajos</h1>
@@ -1022,7 +1228,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           </button>
         </div>
 
-        {/* FILTROS */}
         <div style={styles.filtrosContainer}>
           <h3 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem' }}>🔍 Filtros de Búsqueda</h3>
 
@@ -1095,7 +1300,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           </div>
         </div>
 
-        {/* ESTADÍSTICAS */}
         <div style={styles.statsGrid}>
           {Object.entries({
             'Total Trabajos (agrupados)': estadisticas.total,
@@ -1138,7 +1342,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           ))}
         </div>
 
-        {/* VISTA AGRUPADA POR CLÍNICA Y PACIENTE - COMPACTA */}
         {cargando && trabajos.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '3rem' }}>
             <div style={{ fontSize: '1rem', color: '#64748b' }}>Cargando trabajos...</div>
@@ -1193,19 +1396,14 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                       const dentista = dentistas.find(d => d.id === trabajo.dentista_id);
                       return (
                         <div key={trabajo.ids.join('-')} style={styles.trabajoCard}>
-                          {/* Columna Dentista */}
                           <div style={{ ...styles.trabajoColumn, flex: '1.5' }}>
                             <div style={styles.trabajoLabel}>Dentista</div>
                             <div style={styles.trabajoValue}>{dentista?.nombre || 'N/A'}</div>
                           </div>
-
-                          {/* Columna Fecha */}
                           <div style={{ ...styles.trabajoColumn, flex: '1' }}>
                             <div style={styles.trabajoLabel}>Fecha</div>
                             <div style={styles.trabajoValue}>{new Date(trabajo.fecha_creacion).toLocaleDateString()}</div>
                           </div>
-
-                          {/* Columna Servicios (resumen) */}
                           <div style={{ ...styles.trabajoColumn, flex: '2' }}>
                             <div style={styles.trabajoLabel}>Servicios</div>
                             <div style={styles.trabajoValue}>
@@ -1217,8 +1415,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                               )}
                             </div>
                           </div>
-
-                          {/* Columna Precio */}
                           <div style={{ ...styles.trabajoColumn, flex: '0.8' }}>
                             <div style={styles.trabajoLabel}>Precio</div>
                             <div style={{ ...styles.trabajoValue, color: '#10b981', fontWeight: '600' }}>
@@ -1230,8 +1426,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                               )}
                             </div>
                           </div>
-
-                          {/* Columna Estado (dropdown) */}
                           <div style={{ ...styles.trabajoColumn, flex: '1.2' }}>
                             <select
                               style={styles.estadoDropdown}
@@ -1244,8 +1438,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                               <option value="entregado">📦 Entregado</option>
                             </select>
                           </div>
-
-                          {/* Columna Acciones */}
                           <div style={styles.actionButtons}>
                             <button style={styles.actionIcon} onClick={() => abrirModalEdicion(trabajo)} title="Editar">✏️</button>
                             <button style={styles.actionIcon} onClick={() => abrirModalQR(trabajo)} title="Generar QR">📦</button>

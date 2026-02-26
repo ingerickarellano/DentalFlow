@@ -22,6 +22,8 @@ import AdminPanel from './components/AdminPanel';
 import QREntrega from './components/QREntrega';
 import MiMembresia from './components/MiMembresia';
 import ControlPagosManual from './components/ControlPagosManual';
+import OrdenesLista from './pages/OrdenesLista';
+import OrdenFormulario from './pages/OrdenFormulario';
 
 interface User {
   id: string;
@@ -34,9 +36,6 @@ interface User {
 
 // ============================================
 // ✅ PROTECTED ROUTE — DEFINIDO FUERA DE App
-// Esto es crítico: si se define dentro de App,
-// React lo trata como un componente nuevo en cada
-// render, lo desmonta/remonta y causa scroll al top.
 // ============================================
 const ProtectedRoute = ({
   children,
@@ -255,7 +254,7 @@ const App: React.FC = () => {
         }
       />
 
-      {/* Módulos protegidos */}
+      {/* Módulos protegidos existentes */}
       <Route path="/crear-trabajo" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><CrearTrabajo onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/clinicas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionClinicas /></ProtectedRoute>} />
       <Route path="/dentistas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionDentistas /></ProtectedRoute>} />
@@ -269,6 +268,32 @@ const App: React.FC = () => {
       <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminPanel onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/opciones-cuenta" element={<ProtectedRoute><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/entregas" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><QREntrega /></ProtectedRoute>} />
+
+      {/* NUEVAS RUTAS PARA ÓRDENES DE TRABAJO */}
+      <Route
+        path="/ordenes"
+        element={
+          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
+            <OrdenesLista />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ordenes/nueva"
+        element={
+          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
+            <OrdenFormulario />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ordenes/:id"
+        element={
+          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
+            <OrdenFormulario />
+          </ProtectedRoute>
+        }
+      />
 
       {/* 404 -> Landing */}
       <Route path="*" element={<Navigate to="/" replace />} />

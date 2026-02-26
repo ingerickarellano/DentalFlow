@@ -18,6 +18,15 @@ interface DashboardProps {
   onLogout: () => Promise<void>;
 }
 
+// Definición de la interfaz para los módulos (solución a errores de tipo)
+interface Module {
+  id: string;
+  icon: string;
+  title: string;
+  description: string;
+  path: string;
+}
+
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const membresia = useMembresia(user.id);
@@ -207,19 +216,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   // ============================================
   // 3. LOGOUT
   // ============================================
-const handleLogout = async () => {
-  if (cerrandoSesion) return;
-  if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
-  try {
-    setCerrandoSesion(true);
-    await onLogout();
-  } catch (error) {
-    console.error('Error al cerrar sesión:', error);
-    alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
-  } finally {
-    setCerrandoSesion(false);
-  }
-};
+  const handleLogout = async () => {
+    if (cerrandoSesion) return;
+    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
+    try {
+      setCerrandoSesion(true);
+      await onLogout();
+    } catch (error) {
+      console.error('Error al cerrar sesión:', error);
+      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+    } finally {
+      setCerrandoSesion(false);
+    }
+  };
 
   // ============================================
   // 4. UTILIDADES
@@ -250,7 +259,6 @@ const handleLogout = async () => {
   };
 
   const handleResultadoClick = (tipo: string, item: any) => {
-    // Si la membresía no está activa y no es admin, no permitir navegación
     if (!membresia.estaActiva && user.rol !== 'admin') {
       alert('Tu membresía no está activa. Renueva para acceder a esta sección.');
       return;
@@ -263,7 +271,6 @@ const handleLogout = async () => {
   };
 
   const handleModuleClick = (path: string, moduleId: string) => {
-    // Solo Mi Membresía está habilitado si la membresía no está activa (y no es admin)
     if (user.rol !== 'admin' && !membresia.estaActiva && moduleId !== 'mi-membresia') {
       alert('Tu membresía no está activa. Renueva para acceder a este módulo.');
       return;
@@ -272,12 +279,12 @@ const handleLogout = async () => {
   };
 
   // ============================================
-  // 5. MÓDULOS
+  // 5. MÓDULOS (tipados con Module)
   // ============================================
-  const modulesAdmin = [
-    { id: 'control-pagos', icon: '💳', title: 'Control de Pagos Manual', description: 'Registra y gestiona pagos de membresías de forma manual.', path: '/control-pagos' },
+  const modulesAdmin: Module[] = [
     { id: 'clinicas', icon: '🏥', title: 'Clínicas y Dentistas', description: 'Gestiona todas las clínicas dentales y odontólogos del sistema.', path: '/clinicas' },
     { id: 'crear-trabajo', icon: '📋', title: 'Crear Lista de Trabajo', description: 'Crea nuevos trabajos seleccionando clínica, dentista y servicios.', path: '/crear-trabajo' },
+    { id: 'ordenes', icon: '🏍️', title: 'Órdenes de Trabajo', description: 'Gestiona órdenes detalladas con especificaciones técnicas y selector de dientes.', path: '/ordenes' },
     { id: 'trabajos-proceso', icon: '🔧', title: 'Trabajos en Proceso', description: 'Control y seguimiento de todos los trabajos dentales en producción.', path: '/trabajos' },
     { id: 'laboratoristas', icon: '👨‍🔧', title: 'Laboratoristas', description: 'Gestiona todos los técnicos y laboratoristas del sistema.', path: '/laboratoristas' },
     { id: 'precios', icon: '💰', title: 'Lista de Precios', description: 'Configura precios base y personalizados por clínica/dentista.', path: '/precios' },
@@ -285,12 +292,14 @@ const handleLogout = async () => {
     { id: 'reportes', icon: '📊', title: 'Reportes', description: 'Genera reportes de trabajos, ingresos y productividad.', path: '/reportes' },
     { id: 'admin', icon: '👑', title: 'Panel de Administración', description: 'Gestiona usuarios, membresías y ve estadísticas del sistema.', path: '/admin' },
     { id: 'opciones-cuenta', icon: '⚙️', title: 'Opciones del Sistema', description: 'Configura la información general del sistema y parámetros.', path: '/configuracion' },
-    { id: 'entregas', icon: '📦', title: 'Registro de Entregas', description: 'Escanea códigos QR para registrar entregas de trabajos.', path: '/entregas' }
+    { id: 'entregas', icon: '📦', title: 'Registro de Entregas', description: 'Escanea códigos QR para registrar entregas de trabajos.', path: '/entregas' },
+    { id: 'control-pagos', icon: '💳', title: 'Control de Pagos Manual', description: 'Registra y gestiona pagos de membresías de forma manual.', path: '/control-pagos' },
   ];
 
-  const modulesCliente = [
+  const modulesCliente: Module[] = [
     { id: 'clinicas', icon: '🏥', title: 'Mis Clínicas y Dentistas', description: 'Gestiona tus clínicas dentales y odontólogos asociados.', path: '/clinicas' },
     { id: 'crear-trabajo', icon: '📋', title: 'Crear Lista de Trabajo', description: 'Crea nuevos trabajos seleccionando clínica, dentista y servicios.', path: '/crear-trabajo' },
+    { id: 'ordenes', icon: '🏍️', title: 'Órdenes de Trabajo', description: 'Gestiona órdenes detalladas con especificaciones técnicas y selector de dientes.', path: '/ordenes' },
     { id: 'trabajos-proceso', icon: '🔧', title: 'Mis Trabajos en Proceso', description: 'Control y seguimiento de tus trabajos dentales en producción.', path: '/trabajos' },
     { id: 'laboratoristas', icon: '👨‍🔧', title: 'Mis Laboratoristas', description: 'Gestiona los técnicos y laboratoristas de tu laboratorio.', path: '/laboratoristas' },
     { id: 'precios', icon: '💰', title: 'Mi Lista de Precios', description: 'Configura tus precios base y personalizados.', path: '/precios' },
@@ -303,7 +312,7 @@ const handleLogout = async () => {
   const modules = user.rol === 'admin' ? modulesAdmin : modulesCliente;
 
   // ============================================
-  // 6. ESTILOS COMPLETOS (ICONOS MEJORADOS)
+  // 6. ESTILOS (se mantienen igual)
   // ============================================
   const styles = {
     container: {
@@ -471,7 +480,6 @@ const handleLogout = async () => {
       filter: 'grayscale(20%)',
       backgroundColor: '#f9fafb'
     },
-    // ✅ ICONOS MEJORADOS - VERSIÓN SÓLIDA CON SOMBRA
     moduleIcon: {
       fontSize: '2.2rem',
       marginBottom: '1rem',
@@ -515,7 +523,6 @@ const handleLogout = async () => {
       cursor: 'not-allowed',
       opacity: 0.7
     },
-    // ✅ CANDADO ELEGANTE
     lockOverlay: {
       position: 'absolute' as const,
       top: '0.75rem',
@@ -633,7 +640,7 @@ const handleLogout = async () => {
       />
 
       <main style={styles.mainContent}>
-        {/* Welcome Section - siempre visible */}
+        {/* Welcome Section */}
         <section style={styles.welcomeSection}>
           <h1 style={styles.welcomeTitle}>
             ¡Bienvenido de nuevo, {user.nombre}!
@@ -646,7 +653,7 @@ const handleLogout = async () => {
             }
           </p>
 
-          {/* Subscription Info - siempre visible */}
+          {/* Subscription Info */}
           <div style={styles.subscriptionCard}>
             <div style={styles.subscriptionItem}>
               <div style={styles.subscriptionLabel}>Plan Actual</div>
@@ -699,7 +706,7 @@ const handleLogout = async () => {
             )}
           </div>
 
-          {/* Search - solo visible para admin o membresía activa */}
+          {/* Search */}
           {mostrarBusquedaYEstadisticas && (
             <div style={styles.searchContainer}>
               <div style={styles.searchIcon}>🔍</div>
@@ -716,7 +723,7 @@ const handleLogout = async () => {
           )}
         </section>
 
-        {/* Stats Grid - solo visible para admin o membresía activa */}
+        {/* Stats Grid */}
         {mostrarBusquedaYEstadisticas && (
           <div style={styles.statsGrid}>
             <div
@@ -786,7 +793,7 @@ const handleLogout = async () => {
           </div>
         )}
 
-        {/* Search Results - solo visible si hay búsqueda y está permitido */}
+        {/* Search Results */}
         {mostrarBusquedaYEstadisticas && terminoBusqueda.trim() && (
           <div style={styles.resultadosContainer}>
             <h3 style={styles.resultadoTitle}>
@@ -918,7 +925,7 @@ const handleLogout = async () => {
           </div>
         )}
 
-        {/* Modules Grid - SIEMPRE visible, con estados habilitado/deshabilitado */}
+        {/* Modules Grid */}
         {!terminoBusqueda.trim() && (
           <>
             <h2 style={{
@@ -980,6 +987,7 @@ const handleLogout = async () => {
                       {module.id === 'mi-membresia' && 'Ver Membresía'}
                       {module.id === 'clinicas' && (esAdmin ? 'Gestionar Clínicas' : 'Mis Clínicas')}
                       {module.id === 'crear-trabajo' && 'Crear Trabajo'}
+                      {module.id === 'ordenes' && 'Ver Órdenes'}
                       {module.id === 'trabajos-proceso' && (esAdmin ? 'Ver Trabajos' : 'Mis Trabajos')}
                       {module.id === 'laboratoristas' && (esAdmin ? 'Gestionar Técnicos' : 'Mis Laboratoristas')}
                       {module.id === 'precios' && (esAdmin ? 'Gestionar Precios' : 'Mis Precios')}

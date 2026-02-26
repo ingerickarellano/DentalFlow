@@ -116,6 +116,11 @@ interface HistorialServicio {
   clinica_id: string;
 }
 
+// ========== NUEVA FUNCIÓN DE NORMALIZACIÓN ==========
+const normalizarTexto = (texto: string) => {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+};
+
 const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [clinicas, setClinicas] = useState<ClinicaSupabase[]>([]);
   const [dentistas, setDentistas] = useState<DentistaSupabase[]>([]);
@@ -203,16 +208,18 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     };
     cargarUsuario();
   }, []);
-const scrollPos = useRef(0);
 
-const createInputHandler = (setter: React.Dispatch<React.SetStateAction<any>>) => 
-  (e: React.ChangeEvent<HTMLInputElement>) => {
-    scrollPos.current = window.scrollY;
-    setter(e.target.value);
-    requestAnimationFrame(() => {
-      window.scrollTo(0, scrollPos.current);
-    });
-  };
+  const scrollPos = useRef(0);
+
+  const createInputHandler = (setter: React.Dispatch<React.SetStateAction<any>>) => 
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      scrollPos.current = window.scrollY;
+      setter(e.target.value);
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollPos.current);
+      });
+    };
+
   const materialCategories = [
     { category: 'Dentición Residual', items: ['Diente adyacente', 'Orientar endoestructura', 'Injerto en puente', 'Antagonista'], icon: '🏗️' },
     { category: 'Barras', items: ['Pilar de barra', 'Segmento de barra'], icon: '📏' },
@@ -536,6 +543,7 @@ const createInputHandler = (setter: React.Dispatch<React.SetStateAction<any>>) =
     return colorMap[color] || '#fff';
   };
 
+  // ========== SERVICIOS FILTRADOS CON NORMALIZACIÓN ==========
   const serviciosFiltrados = useMemo(() => {
     if (servicios.length === 0) return [];
 
@@ -546,11 +554,14 @@ const createInputHandler = (setter: React.Dispatch<React.SetStateAction<any>>) =
     }
 
     if (terminoBusquedaDebounced.trim()) {
-      const terminoLower = terminoBusquedaDebounced.toLowerCase().trim();
-      filtrados = filtrados.filter(servicio =>
-        servicio.nombre.toLowerCase().includes(terminoLower) ||
-        (categorias[servicio.categoria as keyof typeof categorias]?.toLowerCase() || '').includes(terminoLower)
-      );
+      const terminoNormalizado = normalizarTexto(terminoBusquedaDebounced);
+      filtrados = filtrados.filter(servicio => {
+        const nombreNormalizado = normalizarTexto(servicio.nombre);
+        const nombreCategoria = categorias[servicio.categoria as keyof typeof categorias] || '';
+        const categoriaNormalizada = normalizarTexto(nombreCategoria);
+        return nombreNormalizado.includes(terminoNormalizado) || 
+               categoriaNormalizada.includes(terminoNormalizado);
+      });
     }
 
     return filtrados;
@@ -575,7 +586,6 @@ const createInputHandler = (setter: React.Dispatch<React.SetStateAction<any>>) =
     });
   };
 
-  // Función para agregar trabajo con control de duplicados
   const agregarTrabajoSimple = (servicio: ServicioSupabase) => {
     if (agregando) return;
     setAgregando(true);

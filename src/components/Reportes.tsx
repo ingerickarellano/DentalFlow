@@ -37,6 +37,13 @@ interface Trabajo {
   notas: string;
   usuario_id: string;
   created_at: string;
+  // Relación con la clínica para obtener tipo de retención
+  clinica?: {
+    id: string;
+    nombre: string;
+    tipo_retencion: 'con_retencion' | 'sin_retencion';
+    porcentaje_retencion: number | null;
+  };
 }
 
 interface Clinica {
@@ -47,6 +54,8 @@ interface Clinica {
   email: string;
   usuario_id: string;
   created_at: string;
+  tipo_retencion: 'con_retencion' | 'sin_retencion';
+  porcentaje_retencion: number | null;
 }
 
 interface ConfiguracionLaboratorio {
@@ -135,10 +144,19 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
         });
       }
 
+      // Obtener trabajos con datos de la clínica (incluyendo tipo de retención)
       const [trabajosRes, clinicasRes, configuracionRes] = await Promise.all([
         supabase
           .from('trabajos')
-          .select('*')
+          .select(`
+            *,
+            clinica:clinica_id (
+              id,
+              nombre,
+              tipo_retencion,
+              porcentaje_retencion
+            )
+          `)
           .eq('usuario_id', user.id)
           .order('fecha_recibido', { ascending: false }),
         supabase.from('clinicas').select('*').eq('usuario_id', user.id),
@@ -186,31 +204,24 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     }
   };
 
-  const calcularMontosConImpuesto = useCallback((montoBruto: number) => {
-    if (!configuracionLaboratorio) {
-      return {
-        bruto: montoBruto,
-        impuesto: 0,
-        neto: montoBruto,
-        porcentaje: 0,
-        tipo: 'Sin configuración'
-      };
+  // ============================================
+  // Cálculo de montos por trabajo según retención de la clínica
+  // ============================================
+  const calcularMontosTrabajo = useCallback((trabajo: Trabajo) => {
+    const bruto = trabajo.precio_total;
+    let impuesto = 0;
+    let neto = bruto;
+    let porcentaje = 0;
+    let tipo = 'Sin retención';
+
+    if (trabajo.clinica?.tipo_retencion === 'con_retencion') {
+      porcentaje = trabajo.clinica.porcentaje_retencion || 15.25;
+      impuesto = (bruto * porcentaje) / 100;
+      neto = bruto - impuesto;
+      tipo = `Retención ${porcentaje}%`;
     }
-
-    const porcentaje = configuracionLaboratorio.porcentaje_impuesto;
-    const montoImpuesto = (montoBruto * porcentaje) / 100;
-    const montoNeto = configuracionLaboratorio.tipo_impuesto === 'iva'
-      ? montoBruto + montoImpuesto
-      : montoBruto - montoImpuesto;
-
-    return {
-      bruto: montoBruto,
-      impuesto: montoImpuesto,
-      neto: montoNeto,
-      porcentaje: porcentaje,
-      tipo: configuracionLaboratorio.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'
-    };
-  }, [configuracionLaboratorio]);
+    return { bruto, impuesto, neto, porcentaje, tipo };
+  }, []);
 
   const actualizarEstadoTrabajo = async (trabajoId: string, nuevoEstado: string) => {
     try {
@@ -364,20 +375,27 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
 
   const estadisticas = useMemo(() => {
     const totalTrabajos = trabajosFiltrados.length;
-    const totalIngresos = trabajosFiltrados.reduce((sum, t) => sum + t.precio_total, 0);
-    const montos = calcularMontosConImpuesto(totalIngresos);
-
     const totalPrestaciones = trabajosFiltrados.reduce((sum, t) =>
       sum + t.servicios.reduce((servSum, s) => servSum + s.cantidad, 0), 0
     );
+    const totalBruto = trabajosFiltrados.reduce((sum, t) => sum + t.precio_total, 0);
+    const totalImpuesto = trabajosFiltrados.reduce((sum, t) => {
+      const { impuesto } = calcularMontosTrabajo(t);
+      return sum + impuesto;
+    }, 0);
+    const totalNeto = trabajosFiltrados.reduce((sum, t) => {
+      const { neto } = calcularMontosTrabajo(t);
+      return sum + neto;
+    }, 0);
 
     return {
       totalTrabajos,
       totalPrestaciones,
-      totalIngresos,
-      ...montos
+      totalBruto,
+      totalImpuesto,
+      totalNeto
     };
-  }, [trabajosFiltrados, calcularMontosConImpuesto]);
+  }, [trabajosFiltrados, calcularMontosTrabajo]);
 
   const obtenerNombreMes = (mes: string) => {
     const meses = [
@@ -397,6 +415,31 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       alert('El navegador bloqueó la ventana emergente. Permite ventanas emergentes e intenta de nuevo.');
       return;
     }
+
+    // Para el PDF, necesitamos calcular los montos por trabajo igual que en la tabla
+    const filas = trabajosFiltrados.map(trabajo => {
+      const montos = calcularMontosTrabajo(trabajo);
+      const serviciosHTML = trabajo.servicios.map(s => `
+        <div class="servicio-item">
+          <div class="servicio-nombre">${s.nombre || 'Servicio'}</div>
+          <div class="servicio-detalle">
+            x${s.cantidad} ${s.pieza_dental ? `| Pieza: ${s.pieza_dental}` : ''}
+          </div>
+          ${s.nota_especial ? `<div class="nota-especial">📝 ${s.nota_especial}</div>` : ''}
+        </div>
+      `).join('');
+
+      return `
+        <tr>
+          <td><strong>${trabajo.paciente}</strong></td>
+          <td><div class="servicios-list">${serviciosHTML}</div></td>
+          <td><span class="estado-badge estado-${trabajo.estado}">${obtenerTextoEstado(trabajo.estado)}</span></td>
+          <td>$${trabajo.precio_total.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+          <td>$${montos.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</td>
+          <td><strong style="color: #10b981;">$${montos.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</strong></td>
+        </tr>
+      `;
+    }).join('');
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -573,7 +616,6 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                     : `${filtros.fechaInicio} a ${filtros.fechaFin}`
                 }</p>
                 <p><strong>Generado:</strong> ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
-                <p><strong>Régimen:</strong> ${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Honorarios'} (${configuracionLaboratorio?.porcentaje_impuesto}%)</p>
                 <p><strong>Total Trabajos:</strong> ${estadisticas.totalTrabajos} | <strong>Prestaciones:</strong> ${estadisticas.totalPrestaciones}</p>
               </div>
             </div>
@@ -586,37 +628,12 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                 <th>Servicios</th>
                 <th>Estado</th>
                 <th>Bruto</th>
-                <th>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'}</th>
-                <th>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'Total con IVA' : 'Total Neto'}</th>
+                <th>Retención</th>
+                <th>Total Neto</th>
               </tr>
             </thead>
             <tbody>
-              ${trabajosFiltrados.map(trabajo => {
-                const clinica = clinicas.find(c => c.id === trabajo.clinica_id);
-                const montos = calcularMontosConImpuesto(trabajo.precio_total);
-                const estadoClass = `estado-badge estado-${trabajo.estado}`;
-
-                const serviciosHTML = trabajo.servicios.map(s => `
-                  <div class="servicio-item">
-                    <div class="servicio-nombre">${s.nombre || 'Servicio'}</div>
-                    <div class="servicio-detalle">
-                      x${s.cantidad} ${s.pieza_dental ? `| Pieza: ${s.pieza_dental}` : ''}
-                    </div>
-                    ${s.nota_especial ? `<div class="nota-especial">📝 ${s.nota_especial}</div>` : ''}
-                  </div>
-                `).join('');
-
-                return `
-                  <tr>
-                    <td><strong>${trabajo.paciente}</strong></td>
-                    <td><div class="servicios-list">${serviciosHTML}</div></td>
-                    <td><span class="${estadoClass}">${obtenerTextoEstado(trabajo.estado)}</span></td>
-                    <td>$${trabajo.precio_total.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                    <td>$${montos.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</td>
-                    <td><strong style="color: #10b981;">$${montos.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</strong></td>
-                  </tr>
-                `;
-              }).join('')}
+              ${filas}
             </tbody>
           </table>
 
@@ -631,15 +648,15 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
             </div>
             <div class="total-row">
               <span>Total Bruto:</span>
-              <span><strong>$${estadisticas.totalIngresos.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</strong></span>
+              <span><strong>$${estadisticas.totalBruto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</strong></span>
             </div>
             <div class="total-row">
-              <span>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} (${configuracionLaboratorio?.porcentaje_impuesto}%):</span>
-              <span><strong>$${estadisticas.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</strong></span>
+              <span>Total Retenido:</span>
+              <span><strong>$${estadisticas.totalImpuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</strong></span>
             </div>
             <div class="total-row total-final">
-              <span>${configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'TOTAL CON IVA' : 'TOTAL NETO A PAGAR'}:</span>
-              <span>$${estadisticas.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+              <span>TOTAL NETO A PAGAR:</span>
+              <span style="color: #10b981;">$${estadisticas.totalNeto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
             </div>
           </div>
 
@@ -661,13 +678,13 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
   };
 
   const exportarExcel = () => {
-    const headers = ['Paciente', 'Clínica', 'Servicios', 'Estado', 'Precio Bruto', 'Precio Neto', 'Impuesto', 'Fecha Recibido', 'Prestaciones Totales'];
+    const headers = ['Paciente', 'Clínica', 'Servicios', 'Estado', 'Precio Bruto', 'Precio Neto', 'Retención', 'Fecha Recibido', 'Prestaciones Totales'];
 
     const filas: string[] = [];
 
     trabajosFiltrados.forEach(trabajo => {
       const clinica = clinicas.find(c => c.id === trabajo.clinica_id)?.nombre || 'N/A';
-      const montos = calcularMontosConImpuesto(trabajo.precio_total);
+      const montos = calcularMontosTrabajo(trabajo);
 
       filas.push([
         `"${trabajo.paciente}"`,
@@ -688,8 +705,8 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
           `"${servicio.nombre || 'Servicio'} (x${servicio.cantidad})${servicio.pieza_dental ? ` - ${servicio.pieza_dental}` : ''}${servicio.nota_especial ? ` - Nota: ${servicio.nota_especial}` : ''}"`,
           trabajo.estado,
           servicio.precio,
-          (servicio.precio - (servicio.precio * (configuracionLaboratorio?.porcentaje_impuesto || 0) / 100)).toFixed(0),
-          (servicio.precio * (configuracionLaboratorio?.porcentaje_impuesto || 0) / 100).toFixed(0),
+          (servicio.precio - (servicio.precio * (montos.porcentaje) / 100)).toFixed(0),
+          (servicio.precio * montos.porcentaje / 100).toFixed(0),
           trabajo.fecha_recibido,
           servicio.cantidad
         ].join(','));
@@ -1166,7 +1183,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                 <option value="entregado">📦 Entregado</option>
               </select>
               <button
-                style={{ ...styles.button, backgroundColor: '#64748b' }} // gris
+                style={{ ...styles.button, backgroundColor: '#64748b' }}
                 onClick={actualizarTodosEstado}
                 disabled={bulkUpdating || trabajosFiltrados.length === 0}
               >
@@ -1203,16 +1220,14 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                     <th style={{ ...styles.th, width: '30%' }}>Prestaciones</th>
                     <th style={styles.th}>Estado</th>
                     <th style={styles.th}>Precio Bruto</th>
-                    <th style={styles.th}>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} ({configuracionLaboratorio?.porcentaje_impuesto}%)</th>
-                    <th style={styles.th}>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'Total con IVA' : 'Total Neto'}</th>
+                    <th style={styles.th}>Retención</th>
+                    <th style={styles.th}>Total Neto</th>
                     <th style={styles.th}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {trabajosFiltrados.map((trabajo, index) => {
-                    const clinica = clinicas.find(c => c.id === trabajo.clinica_id);
-                    const montos = calcularMontosConImpuesto(trabajo.precio_total);
-
+                    const montos = calcularMontosTrabajo(trabajo);
                     return (
                       <tr key={trabajo.id} style={getRowStyle(index)}>
                         <td style={styles.td}>{trabajo.paciente}</td>
@@ -1241,7 +1256,9 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
                           </span>
                         </td>
                         <td style={styles.td}>${trabajo.precio_total.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                        <td style={styles.td}>${montos.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</td>
+                        <td style={styles.td}>
+                          {montos.impuesto > 0 ? `$${montos.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}` : '-'}
+                        </td>
                         <td style={{ ...styles.td, color: '#10b981', fontWeight: 'bold' }}>
                           ${montos.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
@@ -1295,15 +1312,15 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
               </div>
               <div style={styles.totalRow}>
                 <span>Total Bruto:</span>
-                <span>${estadisticas.totalIngresos.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                <span>${estadisticas.totalBruto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
               </div>
               <div style={styles.totalRow}>
-                <span>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'IVA' : 'Retención'} ({configuracionLaboratorio?.porcentaje_impuesto}%):</span>
-                <span>${estadisticas.impuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</span>
+                <span>Total Retenido:</span>
+                <span>${estadisticas.totalImpuesto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}</span>
               </div>
               <div style={{ ...styles.totalRow, ...styles.totalFinal }}>
-                <span>{configuracionLaboratorio?.tipo_impuesto === 'iva' ? 'TOTAL CON IVA:' : 'TOTAL NETO A PAGAR:'}</span>
-                <span style={{ color: '#10b981' }}>${estadisticas.neto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                <span>TOTAL NETO A PAGAR:</span>
+                <span style={{ color: '#10b981' }}>${estadisticas.totalNeto.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
               </div>
             </div>
           </div>
