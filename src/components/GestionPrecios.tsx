@@ -13,7 +13,7 @@ interface Servicio {
   nombre: string;
   precio_base: number;
   categoria: string;
-  anio: number;          // nuevo campo
+  anio: number;
   activo: boolean;
   usuario_id: string;
   creado_en: string;
@@ -25,7 +25,7 @@ interface FilaPlantillaExcel {
   'Categoría': string;
   'Nombre del Servicio': string;
   'Precio Base': number;
-  'Año'?: number;        // opcional
+  'Año'?: number;
 }
 
 interface User {
@@ -53,7 +53,6 @@ const categorias = {
   'otros': '📦 Otros Servicios'
 };
 
-// Mapeo de palabras clave a categorías (clave)
 const palabrasClave: { [key: string]: string } = {
   'fija': 'fija',
   'removible': 'removible',
@@ -78,7 +77,6 @@ const palabrasClave: { [key: string]: string } = {
   'otros': 'otros'
 };
 
-// Mapeo exacto para compatibilidad con nombres sin emojis (por si acaso)
 const mapeoCategorias: { [key: string]: string } = {
   'prótesis fija': 'fija',
   'protesis fija': 'fija',
@@ -111,39 +109,28 @@ const mapeoCategorias: { [key: string]: string } = {
   'otro': 'otros'
 };
 
-// Función para extraer año y categoría de una cadena (ej. "2026 👄 Prótesis Removible")
 const extraerAnioYCategoria = (texto: string): { anio: number; categoria: string } => {
   let textoLimpio = texto.trim();
-  let anio = new Date().getFullYear(); // valor por defecto
-
-  // Intentar extraer año al inicio (4 dígitos)
+  let anio = new Date().getFullYear();
   const matchAnio = textoLimpio.match(/^(\d{4})\s+(.+)/);
   if (matchAnio) {
     anio = parseInt(matchAnio[1]);
-    textoLimpio = matchAnio[2]; // resto sin el año
+    textoLimpio = matchAnio[2];
   }
-
-  // Normalizar: minúsculas, sin acentos, sin tildes, y eliminar emojis (cualquier carácter no alfanumérico ni espacio)
   const normalizado = textoLimpio
     .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")   // quita acentos
-    .replace(/[^\w\s]/g, ' ')                           // elimina emojis y puntuación
-    .replace(/\s+/g, ' ')                              // espacios múltiples a uno
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
-
-  // Primero intentar mapeo exacto (por si acaso)
   let clave = mapeoCategorias[normalizado];
   if (clave) return { anio, categoria: clave };
-
-  // Si no, buscar por palabra clave
   const claves = Object.keys(palabrasClave).sort((a, b) => b.length - a.length);
   for (const palabra of claves) {
     if (normalizado.includes(palabra)) {
       return { anio, categoria: palabrasClave[palabra] };
     }
   }
-
-  // Si no encuentra, devolver 'otros' por defecto
   return { anio, categoria: 'otros' };
 };
 
@@ -178,13 +165,11 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-
       const { data: userData } = await supabase
         .from('perfiles')
         .select('*')
         .eq('id', user.id)
         .single();
-
       if (userData) {
         setUsuario({
           id: userData.id,
@@ -219,13 +204,11 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     try {
       setCargando(true);
       setError('');
-
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setError('No hay usuario autenticado');
         return;
       }
-
       const { data, error } = await supabase
         .from('servicios')
         .select('*')
@@ -233,9 +216,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
         .eq('activo', true)
         .order('categoria', { ascending: true })
         .order('nombre', { ascending: true });
-
       if (error) throw error;
-
       setServicios(data || []);
     } catch (error: any) {
       console.error('Error cargando servicios:', error);
@@ -290,18 +271,15 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
   const guardarServicio = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
     if (!formData.nombre.trim() || !formData.precioBase.trim()) {
       setError('Por favor completa todos los campos obligatorios');
       return;
     }
-
     const precio = parseFloat(formData.precioBase);
     if (isNaN(precio) || precio <= 0) {
       setError('Por favor ingresa un precio válido mayor a 0');
       return;
     }
-
     try {
       setCargando(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -309,7 +287,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
         setError('No hay usuario autenticado');
         return;
       }
-
       if (servicioEditando) {
         const { error } = await supabase
           .from('servicios')
@@ -322,7 +299,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
           })
           .eq('id', servicioEditando.id)
           .eq('usuario_id', user.id);
-
         if (error) throw error;
       } else {
         const servicioData = {
@@ -336,14 +312,11 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
           updated_at: new Date().toISOString(),
           created_at: new Date().toISOString()
         };
-
         const { error } = await supabase
           .from('servicios')
           .insert([servicioData]);
-
         if (error) throw error;
       }
-
       await cargarServicios();
       cerrarModal();
     } catch (error: any) {
@@ -358,7 +331,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     if (!window.confirm(`¿Estás seguro de que quieres eliminar el servicio "${servicio.nombre}"?`)) {
       return;
     }
-
     try {
       setError('');
       const { data: { user } } = await supabase.auth.getUser();
@@ -366,15 +338,12 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
         setError('No hay usuario autenticado');
         return;
       }
-
       const { error } = await supabase
         .from('servicios')
         .update({ activo: false })
         .eq('id', servicio.id)
         .eq('usuario_id', user.id);
-
       if (error) throw error;
-
       setServicios(prev => prev.filter(s => s.id !== servicio.id));
     } catch (error: any) {
       console.error('Error eliminando servicio:', error);
@@ -384,26 +353,10 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
 
   const descargarPlantillaExcel = () => {
     const plantilla: FilaPlantillaExcel[] = [
-      {
-        'Categoría': '👄 Prótesis Removible',
-        'Nombre del Servicio': 'Prótesis Acrílica Completa',
-        'Precio Base': 200000,
-        'Año': 2025
-      },
-      {
-        'Categoría': '🦷 Prótesis Fija',
-        'Nombre del Servicio': 'Corona de Zirconio',
-        'Precio Base': 150000,
-        'Año': 2025
-      },
-      {
-        'Categoría': '⚡ Implantes',
-        'Nombre del Servicio': 'Implante Dental Unitario',
-        'Precio Base': 300000,
-        'Año': 2025
-      }
+      { 'Categoría': '👄 Prótesis Removible', 'Nombre del Servicio': 'Prótesis Acrílica Completa', 'Precio Base': 200000, 'Año': 2025 },
+      { 'Categoría': '🦷 Prótesis Fija', 'Nombre del Servicio': 'Corona de Zirconio', 'Precio Base': 150000, 'Año': 2025 },
+      { 'Categoría': '⚡ Implantes', 'Nombre del Servicio': 'Implante Dental Unitario', 'Precio Base': 300000, 'Año': 2025 }
     ];
-
     const ws = XLSX.utils.json_to_sheet(plantilla);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Servicios');
@@ -431,15 +384,14 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     });
   };
 
-  // 🔥 MODIFICACIÓN AQUÍ: ahora busca la columna 'Año'
+  // Ahora buscará también la columna 'Año'
   const obtenerValorColumna = (fila: any, tipo: 'categoria' | 'nombre' | 'precio' | 'anio'): string | null => {
     const mapeoColumnas = {
       categoria: ['Categoría', 'categoria', 'CATEGORIA', 'Categoria', 'Tipo'],
       nombre: ['Nombre del Servicio', 'nombre', 'NOMBRE', 'Nombre', 'Servicio'],
       precio: ['Precio Base', 'precio_base', 'PRECIO', 'precio', 'Precio'],
-      anio: ['Año', 'anio', 'ANO', 'Año']   // nuevo
+      anio: ['Año', 'anio', 'ANO', 'Año']
     };
-
     const posiblesNombres = mapeoColumnas[tipo];
     for (const nombreColumna of posiblesNombres) {
       const valor = fila[nombreColumna];
@@ -455,39 +407,31 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
       setError('Por favor selecciona un archivo Excel');
       return;
     }
-
     try {
       setCargando(true);
       setError('');
-
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setError('No hay usuario autenticado');
         return;
       }
-
       const datosExcel: any[] = await procesarArchivoExcel(archivoExcel) as any[];
-      
-      // Filtramos filas con datos mínimos
       const datosFiltrados = datosExcel.filter(fila => {
         const categoria = obtenerValorColumna(fila, 'categoria');
         const nombre = obtenerValorColumna(fila, 'nombre');
         const precio = obtenerValorColumna(fila, 'precio');
         return categoria && nombre && precio;
       });
-
       if (datosFiltrados.length === 0) {
         throw new Error('No se encontraron datos válidos en el archivo');
       }
-
       const serviciosParaInsertar = datosFiltrados.map((fila, index) => {
         const numeroFila = index + 2;
         const categoriaRaw = obtenerValorColumna(fila, 'categoria') || '';
         const nombre = obtenerValorColumna(fila, 'nombre') || '';
         const precioRaw = obtenerValorColumna(fila, 'precio') || '0';
-        const anioRaw = obtenerValorColumna(fila, 'anio'); // puede ser null
+        const anioRaw = obtenerValorColumna(fila, 'anio');
 
-        // Primero intentamos usar la columna 'Año' si existe
         let anioFinal = new Date().getFullYear();
         if (anioRaw) {
           const anioNum = parseInt(anioRaw);
@@ -495,24 +439,18 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
             anioFinal = anioNum;
           }
         } else {
-          // Si no hay columna Año, extraemos el año del texto de la categoría
           const { anio } = extraerAnioYCategoria(categoriaRaw);
           anioFinal = anio;
         }
 
-        // Ahora obtenemos la categoría limpia (sin año)
         const { categoria: categoriaExtraida } = extraerAnioYCategoria(categoriaRaw);
-
         if (!categoriaExtraida) {
           throw new Error(`Fila ${numeroFila}: No se pudo determinar la categoría a partir de "${categoriaRaw}"`);
         }
-
-        // Validar precio
         const precio = parseFloat(precioRaw.toString().replace(/[^\d.,]/g, '').replace(',', '.'));
         if (isNaN(precio) || precio <= 0) {
           throw new Error(`Fila ${numeroFila}: Precio inválido`);
         }
-
         return {
           nombre: nombre.toString().trim(),
           categoria: categoriaExtraida,
@@ -525,13 +463,10 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
           created_at: new Date().toISOString()
         };
       });
-
       const { error } = await supabase
         .from('servicios')
         .insert(serviciosParaInsertar);
-
       if (error) throw error;
-
       alert(`✅ ${serviciosParaInsertar.length} servicios cargados correctamente`);
       await cargarServicios();
       setMostrarModalExcel(false);
@@ -544,7 +479,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     }
   };
 
-  // Filtros combinados
+  // Filtros
   const serviciosFiltrados = servicios.filter(s => {
     const matchCategoria = filtroCategoria === 'todos' || s.categoria === filtroCategoria;
     const matchAnio = s.anio === filtroAnio;
@@ -560,61 +495,363 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     }).format(precio);
   };
 
-  // Estilos (igual que antes, se omiten por espacio, pero los tienes en tu código)
+  // ==================== ESTILOS COMPLETOS ====================
   const styles = {
-    container: { padding: '20px', backgroundColor: '#f8f9fa', minHeight: 'calc(100vh - 64px)' },
-    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap' as const, gap: '15px' },
-    title: { fontSize: '24px', fontWeight: '600', color: '#2c3e50', margin: '0' },
-    backButton: { padding: '8px 16px', backgroundColor: '#6c757d', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' },
-    primaryButton: { padding: '8px 16px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' },
-    secondaryButton: { padding: '8px 16px', backgroundColor: '#95a5a6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' },
-    statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '25px' },
-    statCard: { backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e0e0e0' },
-    statNumber: { fontSize: '28px', fontWeight: '600', color: '#2c3e50', margin: '8px 0' },
-    statLabel: { fontSize: '14px', color: '#7f8c8d', fontWeight: '500' },
-    filters: { backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', marginBottom: '25px', border: '1px solid #e0e0e0' },
-    filterTitle: { fontSize: '16px', fontWeight: '600', color: '#2c3e50', marginBottom: '15px' },
-    filterButtons: { display: 'flex', flexWrap: 'wrap' as const, gap: '10px' },
-    filterButton: { padding: '8px 16px', backgroundColor: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: '6px', color: '#495057', cursor: 'pointer', fontSize: '14px' },
-    filterButtonActive: { backgroundColor: '#3498db', color: 'white', borderColor: '#3498db' },
-    contentCard: { backgroundColor: 'white', padding: '25px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e0e0e0' },
-    serviciosGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' },
-    servicioCard: { backgroundColor: 'white', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' },
-    cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' },
-    servicioNombre: { fontSize: '16px', fontWeight: '600', color: '#2c3e50', margin: '0', flex: 1 },
-    categoriaBadge: { padding: '4px 12px', backgroundColor: '#f8f9fa', borderRadius: '4px', fontSize: '12px', color: '#6c757d', fontWeight: '500' },
-    precio: { fontSize: '22px', fontWeight: '600', color: '#27ae60', margin: '12px 0', fontFamily: "'Courier New', monospace" },
-    acciones: { display: 'flex', gap: '10px', marginTop: '15px' },
-    actionButton: { flex: 1, padding: '8px', border: '1px solid #dee2e6', borderRadius: '6px', backgroundColor: 'white', color: '#495057', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' },
-    editButton: { color: '#3498db' },
-    deleteButton: { color: '#e74c3c' },
-    modalOverlay: { position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' },
-    modalContent: { backgroundColor: 'white', borderRadius: '8px', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' },
-    modalHeader: { padding: '20px 20px 10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-    modalTitle: { fontSize: '18px', fontWeight: '600', color: '#2c3e50', margin: 0 },
-    closeButton: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#7f8c8d', padding: 0, lineHeight: 1 },
-    modalBody: { padding: '20px' },
-    formGroup: { marginBottom: '20px' },
-    label: { display: 'block', fontSize: '14px', fontWeight: '500', color: '#495057', marginBottom: '8px' },
-    input: { width: '100%', padding: '10px 12px', border: '1px solid #ced4da', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box' as const },
-    select: { width: '100%', padding: '10px 12px', border: '1px solid #ced4da', borderRadius: '6px', fontSize: '14px', backgroundColor: 'white' },
-    modalFooter: { padding: '20px', borderTop: '1px solid #e0e0e0', display: 'flex', justifyContent: 'flex-end', gap: '10px' },
-    cancelButton: { padding: '8px 16px', backgroundColor: '#f8f9fa', color: '#495057', border: '1px solid #dee2e6', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
-    saveButton: { padding: '8px 16px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
-    loadingText: { textAlign: 'center' as const, padding: '40px 20px', color: '#7f8c8d', fontSize: '16px' },
-    emptyState: { textAlign: 'center' as const, padding: '60px 20px', color: '#7f8c8d' },
-    emptyStateTitle: { fontSize: '18px', fontWeight: '600', marginBottom: '10px' },
-    emptyStateText: { marginBottom: '20px', fontSize: '14px' },
-    errorText: { backgroundColor: '#fff5f5', border: '1px solid #fed7d7', color: '#e53e3e', padding: '12px 16px', borderRadius: '6px', marginBottom: '16px', fontSize: '14px' },
-    excelSection: { padding: '20px', border: '1px solid #e0e0e0', borderRadius: '6px', backgroundColor: '#f8f9fa' },
-    excelTitle: { fontSize: '16px', fontWeight: '600', color: '#2c3e50', marginBottom: '12px' },
-    excelDescription: { fontSize: '14px', color: '#6c757d', marginBottom: '20px', lineHeight: '1.5' },
-    categoryGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '20px' },
-    categoryItem: { padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontSize: '12px', textAlign: 'center' as const, color: '#495057', border: '1px solid #dee2e6' },
-    fileInput: { width: '100%', padding: '12px', border: '1px dashed #ced4da', borderRadius: '6px', backgroundColor: 'white', cursor: 'pointer', marginBottom: '20px', textAlign: 'center' as const, color: '#6c757d' }
+    container: {
+      padding: '20px',
+      backgroundColor: '#f8f9fa',
+      minHeight: 'calc(100vh - 64px)'
+    },
+    header: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '30px',
+      flexWrap: 'wrap' as const,
+      gap: '15px'
+    },
+    title: {
+      fontSize: '24px',
+      fontWeight: '600',
+      color: '#2c3e50',
+      margin: '0'
+    },
+    primaryButton: {
+      padding: '8px 16px',
+      backgroundColor: '#3498db',
+      color: 'white',
+      border: 'none',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    },
+    secondaryButton: {
+      padding: '8px 16px',
+      backgroundColor: '#95a5a6',
+      color: 'white',
+      border: 'none',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    },
+    statsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: '15px',
+      marginBottom: '25px'
+    },
+    statCard: {
+      backgroundColor: 'white',
+      padding: '20px',
+      borderRadius: '8px',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+      border: '1px solid #e0e0e0'
+    },
+    statNumber: {
+      fontSize: '28px',
+      fontWeight: '600',
+      color: '#2c3e50',
+      margin: '8px 0'
+    },
+    statLabel: {
+      fontSize: '14px',
+      color: '#7f8c8d',
+      fontWeight: '500'
+    },
+    filters: {
+      backgroundColor: 'white',
+      padding: '20px',
+      borderRadius: '8px',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+      marginBottom: '25px',
+      border: '1px solid #e0e0e0'
+    },
+    filterTitle: {
+      fontSize: '16px',
+      fontWeight: '600',
+      color: '#2c3e50',
+      marginBottom: '15px'
+    },
+    filterButtons: {
+      display: 'flex',
+      flexWrap: 'wrap' as const,
+      gap: '10px'
+    },
+    filterButton: {
+      padding: '8px 16px',
+      backgroundColor: '#f8f9fa',
+      border: '1px solid #dee2e6',
+      borderRadius: '6px',
+      color: '#495057',
+      cursor: 'pointer',
+      fontSize: '14px'
+    },
+    filterButtonActive: {
+      backgroundColor: '#3498db',
+      color: 'white',
+      borderColor: '#3498db'
+    },
+    contentCard: {
+      backgroundColor: 'white',
+      padding: '25px',
+      borderRadius: '8px',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+      border: '1px solid #e0e0e0'
+    },
+    serviciosGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+      gap: '20px'
+    },
+    servicioCard: {
+      backgroundColor: 'white',
+      border: '1px solid #e0e0e0',
+      borderRadius: '8px',
+      padding: '20px',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+    },
+    cardHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: '15px'
+    },
+    servicioNombre: {
+      fontSize: '16px',
+      fontWeight: '600',
+      color: '#2c3e50',
+      margin: '0',
+      flex: 1
+    },
+    categoriaBadge: {
+      padding: '4px 12px',
+      backgroundColor: '#f8f9fa',
+      borderRadius: '4px',
+      fontSize: '12px',
+      color: '#6c757d',
+      fontWeight: '500',
+      whiteSpace: 'nowrap' as const
+    },
+    anioBadge: {
+      padding: '4px 10px',
+      backgroundColor: '#e9ecef',
+      borderRadius: '4px',
+      fontSize: '12px',
+      color: '#495057',
+      fontWeight: '600',
+      whiteSpace: 'nowrap' as const
+    },
+    precio: {
+      fontSize: '22px',
+      fontWeight: '600',
+      color: '#27ae60',
+      margin: '12px 0',
+      fontFamily: "'Courier New', monospace"
+    },
+    acciones: {
+      display: 'flex',
+      gap: '10px',
+      marginTop: '15px'
+    },
+    actionButton: {
+      flex: 1,
+      padding: '8px',
+      border: '1px solid #dee2e6',
+      borderRadius: '6px',
+      backgroundColor: 'white',
+      color: '#495057',
+      cursor: 'pointer',
+      fontSize: '13px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '6px'
+    },
+    editButton: {
+      color: '#3498db'
+    },
+    deleteButton: {
+      color: '#e74c3c'
+    },
+    modalOverlay: {
+      position: 'fixed' as const,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '20px'
+    },
+    modalContent: {
+      backgroundColor: 'white',
+      borderRadius: '8px',
+      width: '100%',
+      maxWidth: '500px',
+      maxHeight: '90vh',
+      overflow: 'auto',
+      boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+    },
+    modalHeader: {
+      padding: '20px 20px 10px 20px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    },
+    modalTitle: {
+      fontSize: '18px',
+      fontWeight: '600',
+      color: '#2c3e50',
+      margin: 0
+    },
+    closeButton: {
+      background: 'none',
+      border: 'none',
+      fontSize: '24px',
+      cursor: 'pointer',
+      color: '#7f8c8d',
+      padding: 0,
+      lineHeight: 1
+    },
+    modalBody: {
+      padding: '20px'
+    },
+    formGroup: {
+      marginBottom: '20px'
+    },
+    label: {
+      display: 'block',
+      fontSize: '14px',
+      fontWeight: '500',
+      color: '#495057',
+      marginBottom: '8px'
+    },
+    input: {
+      width: '100%',
+      padding: '10px 12px',
+      border: '1px solid #ced4da',
+      borderRadius: '6px',
+      fontSize: '14px',
+      boxSizing: 'border-box' as const
+    },
+    select: {
+      width: '100%',
+      padding: '10px 12px',
+      border: '1px solid #ced4da',
+      borderRadius: '6px',
+      fontSize: '14px',
+      backgroundColor: 'white'
+    },
+    modalFooter: {
+      padding: '20px',
+      borderTop: '1px solid #e0e0e0',
+      display: 'flex',
+      justifyContent: 'flex-end',
+      gap: '10px'
+    },
+    cancelButton: {
+      padding: '8px 16px',
+      backgroundColor: '#f8f9fa',
+      color: '#495057',
+      border: '1px solid #dee2e6',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '14px'
+    },
+    saveButton: {
+      padding: '8px 16px',
+      backgroundColor: '#3498db',
+      color: 'white',
+      border: 'none',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '14px'
+    },
+    loadingText: {
+      textAlign: 'center' as const,
+      padding: '40px 20px',
+      color: '#7f8c8d',
+      fontSize: '16px'
+    },
+    emptyState: {
+      textAlign: 'center' as const,
+      padding: '60px 20px',
+      color: '#7f8c8d'
+    },
+    emptyStateTitle: {
+      fontSize: '18px',
+      fontWeight: '600',
+      marginBottom: '10px'
+    },
+    emptyStateText: {
+      marginBottom: '20px',
+      fontSize: '14px'
+    },
+    errorText: {
+      backgroundColor: '#fff5f5',
+      border: '1px solid #fed7d7',
+      color: '#e53e3e',
+      padding: '12px 16px',
+      borderRadius: '6px',
+      marginBottom: '16px',
+      fontSize: '14px'
+    },
+    excelSection: {
+      padding: '20px',
+      border: '1px solid #e0e0e0',
+      borderRadius: '6px',
+      backgroundColor: '#f8f9fa'
+    },
+    excelTitle: {
+      fontSize: '16px',
+      fontWeight: '600',
+      color: '#2c3e50',
+      marginBottom: '12px'
+    },
+    excelDescription: {
+      fontSize: '14px',
+      color: '#6c757d',
+      marginBottom: '20px',
+      lineHeight: '1.5'
+    },
+    categoryGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, 1fr)',
+      gap: '8px',
+      marginBottom: '20px'
+    },
+    categoryItem: {
+      padding: '8px',
+      backgroundColor: 'white',
+      borderRadius: '4px',
+      fontSize: '12px',
+      textAlign: 'center' as const,
+      color: '#495057',
+      border: '1px solid #dee2e6'
+    },
+    fileInput: {
+      width: '100%',
+      padding: '12px',
+      border: '1px dashed #ced4da',
+      borderRadius: '6px',
+      backgroundColor: 'white',
+      cursor: 'pointer',
+      marginBottom: '20px',
+      textAlign: 'center' as const,
+      color: '#6c757d'
+    }
   };
 
-  // Handlers para drag & drop
+  // Drag & drop handlers
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -624,7 +861,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
 
   return (
     <>
-      <Header 
+      <Header
         user={usuario || undefined}
         onLogout={handleLogout}
         cerrandoSesion={cerrandoSesion}
@@ -678,7 +915,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center' }}>
             <div>
               <div style={styles.filterTitle}>Año:</div>
-              <select 
+              <select
                 style={{ ...styles.select, width: 'auto' }}
                 value={filtroAnio}
                 onChange={(e) => setFiltroAnio(parseInt(e.target.value))}
@@ -719,7 +956,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
             <div style={styles.emptyState}>
               <h3 style={styles.emptyStateTitle}>No hay servicios para el año {filtroAnio}</h3>
               <p style={styles.emptyStateText}>
-                {filtroCategoria !== 'todos' 
+                {filtroCategoria !== 'todos'
                   ? `No hay servicios en la categoría "${categorias[filtroCategoria as keyof typeof categorias]}" para ${filtroAnio}`
                   : `Comienza agregando tu primer servicio para el año ${filtroAnio}`
                 }
@@ -734,19 +971,30 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                 <div key={servicio.id} style={styles.servicioCard}>
                   <div style={styles.cardHeader}>
                     <h3 style={styles.servicioNombre}>{servicio.nombre}</h3>
-                    <span style={styles.categoriaBadge}>
-                      {categorias[servicio.categoria as keyof typeof categorias]}
-                    </span>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <span style={styles.categoriaBadge}>
+                        {categorias[servicio.categoria as keyof typeof categorias]}
+                      </span>
+                      {/* 🔥 AQUÍ SE MUESTRA EL AÑO DE FORMA CLARA */}
+                      <span style={styles.anioBadge}>
+                        {servicio.anio}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '8px' }}>Año: {servicio.anio}</div>
                   <div style={styles.precio}>
                     {formatearPrecioCLP(servicio.precio_base)}
                   </div>
                   <div style={styles.acciones}>
-                    <button style={{ ...styles.actionButton, ...styles.editButton }} onClick={() => abrirModal(servicio)}>
+                    <button
+                      style={{ ...styles.actionButton, ...styles.editButton }}
+                      onClick={() => abrirModal(servicio)}
+                    >
                       ✏️ Editar
                     </button>
-                    <button style={{ ...styles.actionButton, ...styles.deleteButton }} onClick={() => eliminarServicio(servicio)}>
+                    <button
+                      style={{ ...styles.actionButton, ...styles.deleteButton }}
+                      onClick={() => eliminarServicio(servicio)}
+                    >
                       🗑️ Eliminar
                     </button>
                   </div>
@@ -769,7 +1017,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                 <form onSubmit={guardarServicio}>
                   <div style={styles.formGroup}>
                     <label style={styles.label}>Año *</label>
-                    <select 
+                    <select
                       style={styles.select}
                       value={formData.anio}
                       onChange={(e) => setFormData({...formData, anio: parseInt(e.target.value)})}
@@ -781,7 +1029,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                   </div>
                   <div style={styles.formGroup}>
                     <label style={styles.label}>Categoría *</label>
-                    <select 
+                    <select
                       style={styles.select}
                       value={formData.categoria}
                       onChange={(e) => setFormData({...formData, categoria: e.target.value})}
@@ -847,8 +1095,8 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                       <div key={key} style={styles.categoryItem}>{nombre}</div>
                     ))}
                   </div>
-                  <div 
-                    style={styles.fileInput} 
+                  <div
+                    style={styles.fileInput}
                     onClick={() => fileInputRef.current?.click()}
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
