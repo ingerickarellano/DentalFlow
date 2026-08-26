@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
-import Header from './Header'; // Importar el Header
+import Header from './Header';
 
 interface GestionPreciosProps {
   onBack?: () => void;
@@ -40,7 +40,7 @@ interface User {
 
 const categorias = {
   'fija': '🦷 Prótesis Fija',
-  'removible': '👄 Prótesis Removible', 
+  'removible': '👄 Prótesis Removible',
   'implantes': '⚡ Implantes',
   'ortodoncia': '🎯 Ortodoncia',
   'reparaciones': '🔧 Reparaciones',
@@ -101,6 +101,9 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     precioBase: ''
   });
 
+  // 📌 Referencia para el input oculto
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     cargarUsuario();
     cargarServicios();
@@ -151,9 +154,9 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     try {
       setCargando(true);
       setError('');
-      
+
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         setError('No hay usuario autenticado');
         return;
@@ -170,7 +173,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
       if (error) throw error;
 
       setServicios(data || []);
-
     } catch (error: any) {
       console.error('Error cargando servicios:', error);
       setError(error.message);
@@ -221,7 +223,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
   const guardarServicio = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     if (!formData.nombre.trim() || !formData.precioBase.trim()) {
       setError('Por favor completa todos los campos obligatorios');
       return;
@@ -236,7 +238,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     try {
       setCargando(true);
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         setError('No hay usuario autenticado');
         return;
@@ -255,7 +257,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
           .eq('usuario_id', user.id);
 
         if (error) throw error;
-        
       } else {
         const servicioData = {
           nombre: formData.nombre.trim(),
@@ -277,7 +278,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
 
       await cargarServicios();
       cerrarModal();
-      
     } catch (error: any) {
       console.error('Error guardando servicio:', error);
       setError(error.message);
@@ -294,7 +294,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     try {
       setError('');
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         setError('No hay usuario autenticado');
         return;
@@ -309,7 +309,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
       if (error) throw error;
 
       setServicios(prev => prev.filter(s => s.id !== servicio.id));
-      
     } catch (error: any) {
       console.error('Error eliminando servicio:', error);
       setError(error.message);
@@ -338,7 +337,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     const ws = XLSX.utils.json_to_sheet(plantilla);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Servicios');
-    
+
     const colWidths = [
       { wch: 20 },
       { wch: 35 },
@@ -352,20 +351,20 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
   const procesarArchivoExcel = async (file: File) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      
+
       reader.onload = (e) => {
         try {
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
           const workbook = XLSX.read(data, { type: 'array' });
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-          
+
           resolve(jsonData);
         } catch (error) {
           reject(error);
         }
       };
-      
+
       reader.onerror = () => reject(new Error('Error al leer el archivo'));
       reader.readAsArrayBuffer(file);
     });
@@ -379,7 +378,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     };
 
     const posiblesNombres = mapeoColumnas[tipo];
-    
+
     for (const nombreColumna of posiblesNombres) {
       if (fila[nombreColumna] !== undefined && fila[nombreColumna] !== null && fila[nombreColumna] !== '') {
         return fila[nombreColumna].toString();
@@ -406,12 +405,12 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
       }
 
       const datosExcel: any[] = await procesarArchivoExcel(archivoExcel) as any[];
-      
+
       const datosFiltrados = datosExcel.filter(fila => {
         const categoria = obtenerValorColumna(fila, 'categoria');
         const nombre = obtenerValorColumna(fila, 'nombre');
         const precio = obtenerValorColumna(fila, 'precio');
-        
+
         return categoria && nombre && precio;
       });
 
@@ -468,7 +467,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
       await cargarServicios();
       setMostrarModalExcel(false);
       setArchivoExcel(null);
-      
     } catch (error: any) {
       console.error('Error cargando desde Excel:', error);
       setError(error.message);
@@ -477,8 +475,8 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     }
   };
 
-  const serviciosFiltrados = filtroCategoria === 'todos' 
-    ? servicios 
+  const serviciosFiltrados = filtroCategoria === 'todos'
+    ? servicios
     : servicios.filter(s => s.categoria === filtroCategoria);
 
   const formatearPrecioCLP = (precio: number) => {
@@ -490,7 +488,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     }).format(precio);
   };
 
-  // Estilos similares al dashboard - limpios y profesionales
   const styles = {
     container: {
       padding: '20px',
@@ -848,9 +845,20 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     }
   };
 
+  // 📌 Manejadores para arrastrar y soltar
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) setArchivoExcel(file);
+  };
+
   return (
     <>
-      <Header 
+      <Header
         user={usuario || undefined}
         onLogout={handleLogout}
         cerrandoSesion={cerrandoSesion}
@@ -932,7 +940,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
             <div style={styles.emptyState}>
               <h3 style={styles.emptyStateTitle}>No hay servicios</h3>
               <p style={styles.emptyStateText}>
-                {filtroCategoria !== 'todos' 
+                {filtroCategoria !== 'todos'
                   ? `No hay servicios en la categoría "${categorias[filtroCategoria as keyof typeof categorias]}"`
                   : 'Comienza agregando tu primer servicio'
                 }
@@ -958,14 +966,14 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
 
                   <div style={styles.acciones}>
                     <button
-                      style={{...styles.actionButton, ...styles.editButton}}
+                      style={{ ...styles.actionButton, ...styles.editButton }}
                       onClick={() => abrirModal(servicio)}
                     >
                       ✏️ Editar
                     </button>
-                    
+
                     <button
-                      style={{...styles.actionButton, ...styles.deleteButton}}
+                      style={{ ...styles.actionButton, ...styles.deleteButton }}
                       onClick={() => eliminarServicio(servicio)}
                     >
                       🗑️ Eliminar
@@ -995,10 +1003,10 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                 <form onSubmit={guardarServicio}>
                   <div style={styles.formGroup}>
                     <label style={styles.label}>Categoría *</label>
-                    <select 
+                    <select
                       style={styles.select}
                       value={formData.categoria}
-                      onChange={(e) => setFormData({...formData, categoria: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, categoria: e.target.value })}
                       required
                     >
                       {Object.entries(categorias).map(([key, nombre]) => (
@@ -1013,7 +1021,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                       type="text"
                       style={styles.input}
                       value={formData.nombre}
-                      onChange={(e) => setFormData({...formData, nombre: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
                       placeholder="Ej: Corona de Zirconio Personalizada"
                       required
                     />
@@ -1025,7 +1033,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                       type="number"
                       style={styles.input}
                       value={formData.precioBase}
-                      onChange={(e) => setFormData({...formData, precioBase: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, precioBase: e.target.value })}
                       min="0"
                       step="100"
                       placeholder="0"
@@ -1073,17 +1081,24 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                       </div>
                     ))}
                   </div>
-                  
-                  <div style={styles.fileInput}>
-                    {archivoExcel ? `📁 ${archivoExcel.name}` : '📎 Seleccionar archivo Excel'}
+
+                  {/* 📁 Área de carga con click y drag & drop */}
+                  <div
+                    style={styles.fileInput}
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
+                  >
+                    {archivoExcel ? `📁 ${archivoExcel.name}` : '📎 Seleccionar o arrastrar archivo Excel'}
                   </div>
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept=".xlsx, .xls"
                     style={{ display: 'none' }}
                     onChange={(e) => setArchivoExcel(e.target.files?.[0] || null)}
                   />
-                  
+
                   <div style={styles.modalFooter}>
                     <button style={styles.cancelButton} onClick={() => setMostrarModalExcel(false)}>
                       Cancelar
