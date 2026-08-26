@@ -384,7 +384,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
     });
   };
 
-  // Ahora buscará también la columna 'Año'
   const obtenerValorColumna = (fila: any, tipo: 'categoria' | 'nombre' | 'precio' | 'anio'): string | null => {
     const mapeoColumnas = {
       categoria: ['Categoría', 'categoria', 'CATEGORIA', 'Categoria', 'Tipo'],
@@ -975,7 +974,6 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
                       <span style={styles.categoriaBadge}>
                         {categorias[servicio.categoria as keyof typeof categorias]}
                       </span>
-                      {/* 🔥 AQUÍ SE MUESTRA EL AÑO DE FORMA CLARA */}
                       <span style={styles.anioBadge}>
                         {servicio.anio}
                       </span>
