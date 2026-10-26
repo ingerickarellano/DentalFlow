@@ -49,63 +49,20 @@ const Login: React.FC = () => {
 
       const userId = data.user.id;
 
-      // 4. Verificar si es laboratorista (existe en tabla laboratoristas)
-      const { data: laboratorista, error: labError } = await supabase
-        .from('laboratoristas')
-        .select('activo, usuario_id')
+      // 4. Verificar que el usuario tenga perfil. El plan vencido ya NO bloquea
+      //    el ingreso: el laboratorio entra en modo solo lectura (lo controla la base).
+      const { data: perfil, error: perfilError } = await supabase
+        .from('perfiles_usuarios')
+        .select('id, rol')
         .eq('id', userId)
-        .maybeSingle(); // Usamos maybeSingle para no fallar si no existe
+        .maybeSingle();
 
-      if (laboratorista) {
-        // Es laboratorista
-        if (!laboratorista.activo) {
-          throw new Error('Tu cuenta de laboratorista está desactivada. Contacta al administrador.');
-        }
-
-        // Verificar suscripción del administrador asociado
-        const { data: adminProfile, error: adminError } = await supabase
-          .from('perfiles_usuarios')
-          .select('suscripcion_activa, fecha_expiracion, plan')
-          .eq('id', laboratorista.usuario_id)
-          .single();
-
-        if (adminError || !adminProfile) {
-          throw new Error('No se pudo verificar la suscripción del laboratorio.');
-        }
-
-        if (!adminProfile.suscripcion_activa) {
-          throw new Error('La suscripción del laboratorio no está activa. No puedes acceder.');
-        }
-
-        if (adminProfile.fecha_expiracion && new Date(adminProfile.fecha_expiracion) < new Date()) {
-          throw new Error('La suscripción del laboratorio ha expirado. Contacta al administrador.');
-        }
-
-        // Redirigir al dashboard (el componente decidirá qué mostrar)
-        window.location.href = '/dashboard';
-      } else {
-        // No es laboratorista, asumimos que es administrador o usuario normal
-        const { data: perfil, error: perfilError } = await supabase
-          .from('perfiles_usuarios')
-          .select('suscripcion_activa, fecha_expiracion, plan')
-          .eq('id', userId)
-          .single();
-
-        if (perfilError || !perfil) {
-          throw new Error('No se encontró el perfil de usuario. Contacta al administrador.');
-        }
-
-        if (!perfil.suscripcion_activa) {
-          throw new Error('Tu suscripción no está activa. Por favor renueva tu plan.');
-        }
-
-        if (perfil.fecha_expiracion && new Date(perfil.fecha_expiracion) < new Date()) {
-          throw new Error('Tu suscripción ha expirado. Por favor renueva tu plan.');
-        }
-
-        // Redirigir al dashboard de administrador
-        window.location.href = '/dashboard';
+      if (perfilError || !perfil) {
+        await supabase.auth.signOut();
+        throw new Error('No se encontró el perfil de usuario. Contacta al administrador.');
       }
+
+      window.location.href = '/dashboard';
 
     } catch (error: any) {
       console.error('❌ Error en login:', error);

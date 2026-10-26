@@ -166,7 +166,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data: userData } = await supabase
-        .from('perfiles')
+        .from('perfiles_usuarios')
         .select('*')
         .eq('id', user.id)
         .single();

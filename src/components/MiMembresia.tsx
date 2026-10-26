@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { useMembresia } from '../hooks/useMembresia';
+import { useMembresia, nombrePlan } from '../hooks/useMembresia';
 import Header from './Header';
 
 const MiMembresia: React.FC = () => {
@@ -21,7 +21,8 @@ const MiMembresia: React.FC = () => {
   }, []);
 
   const membresia = useMembresia(user?.id);
-  const esAdmin = user?.user_metadata?.rol === 'admin' || false;
+  // Solo el super administrador de la plataforma no necesita renovar
+  const esAdmin = membresia.rol === 'super_admin';
 
   const handleLogout = async () => {
     if (cerrandoSesion) return;
@@ -39,7 +40,7 @@ const MiMembresia: React.FC = () => {
   };
 
   const handleEnviarComprobante = () => {
-    window.location.href = `mailto:transferencias@dentalflow.com?subject=Comprobante de Transferencia - ${user?.email}&body=Hola,%0D%0A%0D%0AAquí adjunto el comprobante de transferencia para mi membresía DentalFlow.%0D%0A%0D%0ADatos:%0D%0AEmail: ${user?.email}%0D%0APlan: ${membresia.plan === 'gratuita' ? 'Profesional' : membresia.plan}%0D%0A%0D%0AAtt,%0D%0A${user?.user_metadata?.nombre || user?.email?.split('@')[0] || ''}`;
+    window.location.href = `mailto:transferencias@dentalflow.com?subject=Comprobante de Transferencia - ${user?.email}&body=Hola,%0D%0A%0D%0AAquí adjunto el comprobante de transferencia para mi membresía DentalFlow.%0D%0A%0D%0ADatos:%0D%0AEmail: ${user?.email}%0D%0APlan: ${membresia.plan === 'gratuito' ? 'Profesional' : nombrePlan(membresia.plan)}%0D%0A%0D%0AAtt,%0D%0A${user?.user_metadata?.nombre || user?.email?.split('@')[0] || ''}`;
   };
 
   if (cargandoUser || membresia.cargando) {
@@ -52,12 +53,7 @@ const MiMembresia: React.FC = () => {
   }
 
   const getPlanDisplayName = (plan: string) => {
-    switch (plan) {
-      case 'gratuita': return 'Prueba Gratuita';
-      case 'profesional': return 'Profesional';
-      case 'empresarial': return 'Empresarial';
-      default: return plan;
-    }
+    return nombrePlan(plan);
   };
 
   const getEstadoStyles = (estaActiva: boolean, dias: number) => {
@@ -136,11 +132,11 @@ const MiMembresia: React.FC = () => {
 
           {/* Características del plan */}
           <div style={styles.featuresGrid}>
-            {membresia.plan === 'gratuita' && (
+            {membresia.plan === 'gratuito' && (
               <>
-                <div style={styles.featureItem}>✓ Hasta 50 trabajos/mes</div>
-                <div style={styles.featureItem}>✓ 1 laboratorio</div>
-                <div style={styles.featureItem}>✓ Soporte básico</div>
+                <div style={styles.featureItem}>✓ Hasta 3 clínicas</div>
+                <div style={styles.featureItem}>✓ Pacientes ilimitados</div>
+                <div style={styles.featureItem}>✓ Prueba de 30 días</div>
               </>
             )}
             {membresia.plan === 'profesional' && (
@@ -151,7 +147,7 @@ const MiMembresia: React.FC = () => {
                 <div style={styles.featureItem}>✓ Reportes avanzados</div>
               </>
             )}
-            {membresia.plan === 'empresarial' && (
+            {membresia.plan === 'enterprise' && (
               <>
                 <div style={styles.featureItem}>✓ Todo en Profesional</div>
                 <div style={styles.featureItem}>✓ Laboratorios ilimitados</div>
@@ -192,7 +188,7 @@ const MiMembresia: React.FC = () => {
                   </ul>
                 </div>
                 <div style={styles.planOpcion}>
-                  <h4 style={styles.planOpcionTitulo}>Plan Empresarial</h4>
+                  <h4 style={styles.planOpcionTitulo}>Plan Enterprise</h4>
                   <div style={styles.planOpcionPrecio}>$16.000<span style={styles.planOpcionPeriodo}>/mes</span></div>
                   <ul style={styles.planOpcionLista}>
                     <li>✓ Todo del plan Profesional</li>
@@ -220,7 +216,7 @@ const MiMembresia: React.FC = () => {
                     <p><strong>Cuenta Corriente:</strong> 123-45678-9</p>
                     <p><strong>RUT:</strong> 12.345.678-9</p>
                     <p><strong>Titular:</strong> DentalFlow SpA</p>
-                    <p><strong>Monto:</strong> $8.000 CLP/mes (Profesional) o $16.000 CLP/mes (Empresarial)</p>
+                    <p><strong>Monto:</strong> $8.000 CLP/mes (Profesional) o $16.000 CLP/mes (Enterprise)</p>
                     <p><strong>Email para comprobante:</strong> transferencias@dentalflow.com</p>
                   </div>
                   <div style={{ marginTop: '1.5rem' }}>
