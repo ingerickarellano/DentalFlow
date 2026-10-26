@@ -218,8 +218,8 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       const [trabajosRes, clinicasRes, dentistasRes, serviciosRes, laboratoristasRes] =
         await Promise.all([
           supabase.from('trabajos').select('*').eq('usuario_id', user.id).order('fecha_creacion', { ascending: false }),
-          supabase.from('clinicas').select('*').eq('usuario_id', user.id),
-          supabase.from('dentistas').select('*').eq('usuario_id', user.id),
+          supabase.from('clinicas').select('*'),
+          supabase.from('dentistas').select('*'),
           supabase.from('servicios').select('*').eq('usuario_id', user.id),
           supabase.from('laboratoristas').select('*').eq('usuario_id', user.id)
         ]);

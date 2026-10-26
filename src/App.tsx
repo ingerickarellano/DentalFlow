@@ -8,7 +8,6 @@ import Login from './components/Login';
 import Registro from './components/Registro';
 import RecuperacionCuenta from './components/RecuperacionCuenta';
 import Dashboard from './components/Dashboard';
-import DashboardLaboratorista from './components/DashboardLaboratorista';
 import CrearTrabajo from './components/CrearTrabajo';
 import GestionClinicas from './components/GestionClinicas';
 import GestionDentistas from './components/GestionDentistas';
@@ -235,11 +234,8 @@ const App: React.FC = () => {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            {currentUser?.rol === 'laboratorista' ? (
-              <DashboardLaboratorista user={currentUser} onLogout={handleLogout} />
-            ) : (
-              <Dashboard user={currentUser!} onLogout={handleLogout} />
-            )}
+            {/* Un solo Dashboard: muestra los módulos según el rol */}
+            <Dashboard user={currentUser!} onLogout={handleLogout} />
           </ProtectedRoute>
         }
       />
@@ -256,24 +252,24 @@ const App: React.FC = () => {
 
       {/* Módulos protegidos existentes */}
       <Route path="/crear-trabajo" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><CrearTrabajo onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
-      <Route path="/clinicas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionClinicas /></ProtectedRoute>} />
-      <Route path="/dentistas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionDentistas /></ProtectedRoute>} />
+      <Route path="/clinicas" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><GestionClinicas /></ProtectedRoute>} />
+      <Route path="/dentistas" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><GestionDentistas /></ProtectedRoute>} />
       <Route path="/laboratoristas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionLaboratoristas onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
-      <Route path="/control-pagos" element={<ProtectedRoute allowedRoles={['admin']}><ControlPagosManual /></ProtectedRoute>} />
+      <Route path="/control-pagos" element={<ProtectedRoute allowedRoles={['super_admin']}><ControlPagosManual /></ProtectedRoute>} />
       <Route path="/servicios" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionServicios /></ProtectedRoute>} />
-      <Route path="/trabajos" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><GestionTrabajos /></ProtectedRoute>} />
+      <Route path="/trabajos" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionTrabajos /></ProtectedRoute>} />
       <Route path="/precios" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionPrecios /></ProtectedRoute>} />
-      <Route path="/configuracion" element={<ProtectedRoute><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/configuracion" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/reportes" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><Reportes onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminPanel onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
-      <Route path="/opciones-cuenta" element={<ProtectedRoute><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
-      <Route path="/entregas" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><QREntrega /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute allowedRoles={['super_admin']}><AdminPanel onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/opciones-cuenta" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/entregas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><QREntrega /></ProtectedRoute>} />
 
       {/* NUEVAS RUTAS PARA ÓRDENES DE TRABAJO */}
       <Route
         path="/ordenes"
         element={
-          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
+          <ProtectedRoute allowedRoles={['admin', 'cliente']}>
             <OrdenesLista />
           </ProtectedRoute>
         }
@@ -281,7 +277,7 @@ const App: React.FC = () => {
       <Route
         path="/ordenes/nueva"
         element={
-          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
+          <ProtectedRoute allowedRoles={['admin', 'cliente']}>
             <OrdenFormulario />
           </ProtectedRoute>
         }
@@ -289,7 +285,7 @@ const App: React.FC = () => {
       <Route
         path="/ordenes/:id"
         element={
-          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
+          <ProtectedRoute allowedRoles={['admin', 'cliente']}>
             <OrdenFormulario />
           </ProtectedRoute>
         }

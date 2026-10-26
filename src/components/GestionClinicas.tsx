@@ -82,12 +82,10 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
         supabase
           .from('clinicas')
           .select('*')
-          .eq('usuario_id', user.id)
           .order('nombre', { ascending: true }),
         supabase
           .from('dentistas')
           .select('*')
-          .eq('usuario_id', user.id)
           .order('nombre', { ascending: true })
       ]);
 
@@ -135,6 +133,10 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     }
     return '';
   })();
+
+  // El laboratorista solo elimina lo que él creó; el administrador, todo
+  const puedeEliminar = (registro: { usuario_id: string }) =>
+    membresia.rol !== 'laboratorista' || registro.usuario_id === usuario?.id;
 
   // Mensajes de la base (PLAN_VENCIDO / LIMITE_PLAN) sin el código técnico
   const mensajeError = (error: any) =>
@@ -226,16 +228,14 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
         email: formDataClinica.email.trim(),
         tipo_retencion: formDataClinica.tipo_retencion,
         porcentaje_retencion: formDataClinica.tipo_retencion === 'con_retencion' ?
-          PORCENTAJE_RETENCION_FIJO : null,
-        usuario_id: user.id
+          PORCENTAJE_RETENCION_FIJO : null
       };
 
       if (clinicaEditando) {
         const { error } = await supabase
           .from('clinicas')
           .update(clinicaDataForSupabase)
-          .eq('id', clinicaEditando.id)
-          .eq('usuario_id', user.id);
+          .eq('id', clinicaEditando.id);
 
         if (error) throw error;
 
@@ -247,7 +247,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       } else {
         const { data, error } = await supabase
           .from('clinicas')
-          .insert([clinicaDataForSupabase])
+          .insert([{ ...clinicaDataForSupabase, usuario_id: user.id }])
           .select();
 
         if (error) throw error;
@@ -334,19 +334,17 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
       if (!user) return;
 
-      await supabase
-        .from('dentistas')
-        .delete()
-        .eq('clinica_id', clinica.id)
-        .eq('usuario_id', user.id);
-
-      const { error } = await supabase
+      // Sus dentistas se eliminan automáticamente con la clínica
+      const { data: eliminadas, error } = await supabase
         .from('clinicas')
         .delete()
         .eq('id', clinica.id)
-        .eq('usuario_id', user.id);
+        .select('id');
 
       if (error) throw error;
+      if (!eliminadas || eliminadas.length === 0) {
+        throw new Error('Solo puedes eliminar las clínicas que tú creaste.');
+      }
 
       setClinicas(prev => prev.filter(c => c.id !== clinica.id));
       setDentistas(prev => prev.filter(d => d.clinica_id !== clinica.id));
@@ -368,13 +366,16 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
       if (!user) return;
 
-      const { error } = await supabase
+      const { data: eliminados, error } = await supabase
         .from('dentistas')
         .delete()
         .eq('id', dentista.id)
-        .eq('usuario_id', user.id);
+        .select('id');
 
       if (error) throw error;
+      if (!eliminados || eliminados.length === 0) {
+        throw new Error('Solo puedes eliminar los dentistas que tú creaste.');
+      }
 
       setDentistas(prev => prev.filter(d => d.id !== dentista.id));
       alert('✅ Dentista eliminado exitosamente');
@@ -945,9 +946,11 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                   <span style={styles.dentistaNombre}>{dentista.nombre}</span>
                   <span style={styles.dentistaEspecialidad}>{dentista.especialidad}</span>
                 </div>
-                <button onClick={() => eliminarDentista(dentista)} style={styles.deleteButton}>
-                  Eliminar
-                </button>
+                {puedeEliminar(dentista) && (
+                  <button onClick={() => eliminarDentista(dentista)} style={styles.deleteButton}>
+                    Eliminar
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -1060,9 +1063,11 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                           <button onClick={() => abrirModalClinica(clinica)} style={{ ...styles.editButton, marginRight: 0, flex: '1 1 90px' }}>
                             ✏️ Editar
                           </button>
-                          <button onClick={() => eliminarClinica(clinica)} style={{ ...styles.deleteButton, flex: '1 1 90px' }}>
-                            🗑️ Eliminar
-                          </button>
+                          {puedeEliminar(clinica) && (
+                            <button onClick={() => eliminarClinica(clinica)} style={{ ...styles.deleteButton, flex: '1 1 90px' }}>
+                              🗑️ Eliminar
+                            </button>
+                          )}
                         </div>
                         {expandida && <div style={{ marginTop: '12px' }}>{renderDentistas(clinica)}</div>}
                       </div>
@@ -1126,14 +1131,16 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
                                 >
                                   ✏️
                                 </button>
-                                <button
-                                  onClick={() => eliminarClinica(clinica)}
-                                  style={{ ...styles.deleteButton, ...styles.iconButton }}
-                                  title="Eliminar clínica"
-                                  aria-label={`Eliminar ${clinica.nombre}`}
-                                >
-                                  🗑️
-                                </button>
+                                {puedeEliminar(clinica) && (
+                                  <button
+                                    onClick={() => eliminarClinica(clinica)}
+                                    style={{ ...styles.deleteButton, ...styles.iconButton }}
+                                    title="Eliminar clínica"
+                                    aria-label={`Eliminar ${clinica.nombre}`}
+                                  >
+                                    🗑️
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

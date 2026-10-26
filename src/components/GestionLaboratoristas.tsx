@@ -1,799 +1,656 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import Header from './Header';
+import { useMembresia } from '../hooks/useMembresia';
+import { useMediaQuery, BREAKPOINTS } from '../hooks/useMediaQuery';
+
+// ============================================
+// GESTIÓN DE LABORATORISTAS (solo administrador del laboratorio)
+// - Las cuentas se crean con la Edge Function "gestionar-laboratorista",
+//   que corre en Supabase: el administrador NO pierde su sesión.
+// - Un laboratorista se desactiva (no se borra) para conservar su historial.
+// - El switch "Puede despachar" habilita el Registro de Entregas.
+// ============================================
+
+interface Laboratorista {
+  id: string;
+  usuario_id: string;
+  nombre: string;
+  email: string | null;
+  telefono: string | null;
+  especialidad: string | null;
+  activo: boolean;
+  puede_despachar: boolean;
+  created_at?: string;
+}
+
+const ESPECIALIDADES = [
+  'Prótesis Fija',
+  'Prótesis Removible',
+  'Ortodoncia',
+  'Implantes',
+  'Cerámica Dental',
+  'Laboratorio Digital'
+];
+
+const LARGO_MINIMO_PASSWORD = 8;
+const EMAIL_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Lee el mensaje de error que devuelve la Edge Function
+const mensajeDeFuncion = async (error: any): Promise<string> => {
+  try {
+    const cuerpo = await error?.context?.json?.();
+    if (cuerpo?.error) return cuerpo.error;
+  } catch {
+    /* sin cuerpo legible */
+  }
+  return error?.message || 'Error desconocido';
+};
+
+const FORM_VACIO = {
+  nombre: '',
+  email: '',
+  telefono: '',
+  especialidad: ESPECIALIDADES[0],
+  password: '',
+  confirmPassword: '',
+  puede_despachar: false
+};
 
 const GestionLaboratoristas: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
-  const [laboratoristas, setLaboratoristas] = useState<any[]>([]);
-  const [modalAbierto, setModalAbierto] = useState(false);
+  const vistaTarjetas = useMediaQuery(BREAKPOINTS.tablet);
+
+  const [usuario, setUsuario] = useState<any>(null);
+  const [laboratoristas, setLaboratoristas] = useState<Laboratorista[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  // Datos del formulario
-  const [formData, setFormData] = useState({
-    nombre: '',
-    email: '',
-    telefono: '',
-    especialidad: 'Prótesis Fija',
-    password: '',
-    confirmPassword: ''
-  });
 
-  const especialidades = [
-    'Prótesis Fija',
-    'Prótesis Removible', 
-    'Ortodoncia',
-    'Implantes',
-    'Cerámica Dental',
-    'Laboratorio Digital'
-  ];
+  const [modalNuevo, setModalNuevo] = useState(false);
+  const [form, setForm] = useState(FORM_VACIO);
+  const [errorForm, setErrorForm] = useState('');
 
-  // Cargar laboratoristas
-  useEffect(() => {
-    cargarLaboratoristas();
-  }, []);
+  const [modalPassword, setModalPassword] = useState<Laboratorista | null>(null);
+  const [nuevaPassword, setNuevaPassword] = useState({ password: '', confirmPassword: '' });
+  const [errorPassword, setErrorPassword] = useState('');
 
-  const cargarLaboratoristas = async () => {
+  const membresia = useMembresia(usuario?.id);
+
+  // ---------------- Carga ----------------
+  const cargar = useCallback(async () => {
     try {
       setCargando(true);
       setError(null);
-      
-      console.log('Cargando laboratoristas...');
-      
-      // Primero obtener el usuario actual
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('No hay usuario autenticado');
-      }
-
-      console.log('Usuario autenticado:', user.email);
-      
-      // Obtener el laboratorio del usuario actual
-      const { data: laboratorio, error: labError } = await supabase
-        .from('laboratorios')
-        .select('id, nombre')
-        .eq('usuario_admin_id', user.id)
-        .single();
-
-      if (labError) {
-        console.warn('No hay laboratorio registrado:', labError.message);
-        // Si no hay laboratorio, mostrar todos los laboratoristas (modo administrador)
-        const { data, error } = await supabase
-          .from('laboratoristas')
-          .select('*')
-          .order('nombre');
-        
-        if (error) throw error;
-        setLaboratoristas(data || []);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate('/login');
         return;
       }
+      setUsuario(user);
 
-      console.log('Laboratorio encontrado:', laboratorio.nombre);
-      
-      // Cargar laboratoristas de este laboratorio
-      const { data, error } = await supabase
+      // La base solo devuelve los laboratoristas del laboratorio del administrador
+      const { data, error: errorCarga } = await supabase
         .from('laboratoristas')
-        .select('*')
-        .eq('laboratorio_id', laboratorio.id)
-        .order('nombre');
-
-      if (error) throw error;
-      
-      setLaboratoristas(data || []);
-      console.log('Laboratoristas cargados:', data?.length || 0);
-
-    } catch (error: any) {
-      console.error('Error cargando laboratoristas:', error);
-      setError(error.message);
+        .select('id, usuario_id, nombre, email, telefono, especialidad, activo, puede_despachar, created_at')
+        .order('activo', { ascending: false })
+        .order('nombre', { ascending: true });
+      if (errorCarga) throw errorCarga;
+      setLaboratoristas((data || []) as Laboratorista[]);
+    } catch (e: any) {
+      console.error('Error cargando laboratoristas:', e);
+      setError(e.message || 'No se pudieron cargar los laboratoristas');
     } finally {
       setCargando(false);
     }
+  }, [navigate]);
+
+  useEffect(() => {
+    cargar();
+  }, [cargar]);
+
+  const handleVolver = () => (onBack ? onBack() : navigate('/dashboard'));
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
   };
 
-  // Crear nuevo laboratorista
-  const crearLaboratorista = async () => {
-    // Validaciones básicas
-    if (!formData.nombre || !formData.email || !formData.password) {
-      alert('Por favor complete todos los campos requeridos');
-      return;
-    }
+  const activos = laboratoristas.filter(l => l.activo).length;
+  const puedeCrear = !membresia.cargando && !membresia.soloLectura;
 
-    if (formData.password !== formData.confirmPassword) {
-      alert('Las contraseñas no coinciden');
+  // ---------------- Crear ----------------
+  const abrirNuevo = () => {
+    if (!puedeCrear) {
+      alert('Tu plan está vencido: regulariza tu pago en Mi Membresía para agregar laboratoristas.');
       return;
     }
+    setForm(FORM_VACIO);
+    setErrorForm('');
+    setModalNuevo(true);
+  };
 
-    if (formData.password.length < 6) {
-      alert('La contraseña debe tener al menos 6 caracteres');
-      return;
+  const crearLaboratorista = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorForm('');
+    const nombre = form.nombre.trim();
+    const email = form.email.trim().toLowerCase();
+
+    if (nombre.length < 2) return setErrorForm('Ingresa el nombre del laboratorista.');
+    if (!EMAIL_VALIDO.test(email)) return setErrorForm('Ingresa un email válido.');
+    if (form.password.length < LARGO_MINIMO_PASSWORD) {
+      return setErrorForm(`La contraseña debe tener al menos ${LARGO_MINIMO_PASSWORD} caracteres.`);
     }
+    if (form.password !== form.confirmPassword) return setErrorForm('Las contraseñas no coinciden.');
 
     try {
-      setCargando(true);
-      setError(null);
-
-      // 1. Obtener el usuario administrador actual
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new Error('No hay usuario administrador autenticado');
-      }
-
-      console.log('👤 Admin encontrado:', user.email);
-
-      // 2. Obtener o crear el laboratorio del administrador
-      let laboratorioId;
-      
-      // Primero intentar obtener laboratorio existente
-      const { data: laboratorioExistente, error: labError } = await supabase
-        .from('laboratorios')
-        .select('id')
-        .eq('usuario_admin_id', user.id)
-        .single();
-
-      if (labError) {
-        console.log('⚠️ No hay laboratorio, creando uno...');
-        // Crear laboratorio automáticamente
-        const { data: nuevoLab, error: nuevoLabError } = await supabase
-          .from('laboratorios')
-          .insert([{
-            nombre: `Laboratorio de ${user.email?.split('@')[0] || 'Admin'}`,
-            usuario_admin_id: user.id,
-            email: user.email,
-            telefono: '',
-            direccion: ''
-          }])
-          .select()
-          .single();
-
-        if (nuevoLabError) {
-          console.error('❌ Error creando laboratorio:', nuevoLabError);
-          throw new Error(`No se pudo crear el laboratorio: ${nuevoLabError.message}`);
-        }
-        
-        laboratorioId = nuevoLab.id;
-        console.log('✅ Laboratorio creado:', nuevoLab.id);
-      } else {
-        laboratorioId = laboratorioExistente.id;
-        console.log('✅ Laboratorio encontrado:', laboratorioId);
-      }
-
-      // 3. Crear usuario en Auth
-      console.log('📝 Creando usuario en Auth...');
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            nombre: formData.nombre,
-            rol: 'laboratorista',
-            telefono: formData.telefono,
-            especialidad: formData.especialidad
-          },
-          emailRedirectTo: `${window.location.origin}/dashboard`
+      setGuardando(true);
+      const { error: errorFuncion } = await supabase.functions.invoke('gestionar-laboratorista', {
+        body: {
+          accion: 'crear',
+          nombre,
+          email,
+          password: form.password,
+          telefono: form.telefono.trim(),
+          especialidad: form.especialidad,
+          puede_despachar: form.puede_despachar
         }
       });
-
-      if (authError) {
-        console.error('❌ Error creando usuario Auth:', authError);
-        if (authError.message.includes('already registered')) {
-          throw new Error('Este email ya está registrado. Usa otro email.');
-        }
-        throw authError;
+      if (errorFuncion) {
+        setErrorForm(await mensajeDeFuncion(errorFuncion));
+        return;
       }
-
-      if (!authData.user) {
-        throw new Error('No se pudo crear el usuario en el sistema');
-      }
-
-      console.log('✅ Usuario Auth creado:', authData.user.id);
-
-      // Esperar 1 segundo para asegurar que el usuario se creó
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // 4. Crear registro en tabla laboratoristas
-      const laboratoristaData = {
-        nombre: formData.nombre,
-        email: formData.email,
-        telefono: formData.telefono,
-        especialidad: formData.especialidad,
-        usuario_id: authData.user.id,  // ID de auth.users
-        laboratorio_id: laboratorioId, // ID del laboratorio del admin
-        activo: true,
-        suscripcion: 'basica',
-        publicidad_activa: false,
-        created_at: new Date().toISOString()
-      };
-
-      console.log('📝 Insertando laboratorista:', laboratoristaData);
-      
-      const { data, error: insertError } = await supabase
-        .from('laboratoristas')
-        .insert([laboratoristaData])
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error('❌ Error insertando laboratorista:', insertError);
-        
-        // Mensaje específico para diferentes errores
-        if (insertError.message.includes('foreign key constraint')) {
-          throw new Error(`
-            ERROR DE CLAVE FORÁNEA: La tabla 'laboratoristas' no está correctamente configurada.
-            
-            Ejecuta en Supabase SQL Editor:
-            
-            ALTER TABLE laboratoristas 
-            DROP CONSTRAINT IF EXISTS laboratoristas_usuario_id_fkey;
-            
-            ALTER TABLE laboratoristas
-            ADD CONSTRAINT laboratoristas_usuario_id_fkey 
-            FOREIGN KEY (usuario_id) 
-            REFERENCES auth.users(id) 
-            ON DELETE CASCADE;
-            
-            Y asegúrate de que la tabla 'laboratorios' exista.
-          `);
-        }
-        
-        if (insertError.message.includes('laboratorio_id')) {
-          throw new Error(`
-            ERROR: No se encontró un laboratorio para este administrador.
-            
-            Primero asegúrate de ejecutar en Supabase:
-            
-            CREATE TABLE IF NOT EXISTS laboratorios (
-              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-              nombre TEXT NOT NULL,
-              usuario_admin_id UUID REFERENCES auth.users(id),
-              UNIQUE(usuario_admin_id)
-            );
-            
-            ALTER TABLE laboratoristas 
-            ADD COLUMN IF NOT EXISTS laboratorio_id UUID REFERENCES laboratorios(id);
-          `);
-        }
-        
-        throw insertError;
-      }
-
-      console.log('✅ Laboratorista creado exitosamente:', data);
-      
-      alert('✅ Laboratorista creado exitosamente. El usuario recibirá un email con sus credenciales.');
-      
-      // Cerrar modal y resetear
-      setModalAbierto(false);
-      resetForm();
-      
-      // Recargar lista
-      await cargarLaboratoristas();
-
-    } catch (error: any) {
-      console.error('❌ Error completo al crear laboratorista:', error);
-      setError(error.message);
-      alert(`❌ Error: ${error.message}`);
+      setModalNuevo(false);
+      alert(`✅ Laboratorista creado. ${nombre} ya puede iniciar sesión con ${email} y la contraseña que definiste.`);
+      await cargar();
+    } catch (e: any) {
+      setErrorForm(e.message || 'No se pudo crear el laboratorista');
     } finally {
-      setCargando(false);
+      setGuardando(false);
     }
   };
-  const resetForm = () => {
-    setFormData({
-      nombre: '',
-      email: '',
-      telefono: '',
-      especialidad: 'Prótesis Fija',
-      password: '',
-      confirmPassword: ''
-    });
+
+  // ---------------- Activar / desactivar ----------------
+  const cambiarActivo = async (lab: Laboratorista) => {
+    const accion = lab.activo ? 'Desactivar' : 'Activar';
+    const detalle = lab.activo
+      ? 'No podrá iniciar sesión ni ver información del laboratorio. Sus trabajos se conservan.'
+      : 'Podrá volver a iniciar sesión.';
+    if (!window.confirm(`¿${accion} a ${lab.nombre}?\n\n${detalle}`)) return;
+
+    const { error: errorUpdate } = await supabase
+      .from('laboratoristas')
+      .update({ activo: !lab.activo, updated_at: new Date().toISOString() })
+      .eq('id', lab.id);
+    if (errorUpdate) {
+      alert(`Error: ${errorUpdate.message}`);
+      return;
+    }
+    setLaboratoristas(prev => prev.map(l => (l.id === lab.id ? { ...l, activo: !lab.activo } : l)));
   };
 
-  const cambiarEstado = async (id: string, activoActual: boolean) => {
-    const confirmacion = window.confirm(
-      `¿${activoActual ? 'Desactivar' : 'Activar'} este laboratorista?`
-    );
-    
-    if (!confirmacion) return;
+  // ---------------- Switch de despacho ----------------
+  const cambiarDespacho = async (lab: Laboratorista) => {
+    const nuevo = !lab.puede_despachar;
+    setLaboratoristas(prev => prev.map(l => (l.id === lab.id ? { ...l, puede_despachar: nuevo } : l)));
+    const { error: errorUpdate } = await supabase
+      .from('laboratoristas')
+      .update({ puede_despachar: nuevo, updated_at: new Date().toISOString() })
+      .eq('id', lab.id);
+    if (errorUpdate) {
+      setLaboratoristas(prev => prev.map(l => (l.id === lab.id ? { ...l, puede_despachar: !nuevo } : l)));
+      alert(`Error: ${errorUpdate.message}`);
+    }
+  };
 
+  // ---------------- Cambiar contraseña ----------------
+  const abrirPassword = (lab: Laboratorista) => {
+    setNuevaPassword({ password: '', confirmPassword: '' });
+    setErrorPassword('');
+    setModalPassword(lab);
+  };
+
+  const guardarPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalPassword) return;
+    if (nuevaPassword.password.length < LARGO_MINIMO_PASSWORD) {
+      return setErrorPassword(`La contraseña debe tener al menos ${LARGO_MINIMO_PASSWORD} caracteres.`);
+    }
+    if (nuevaPassword.password !== nuevaPassword.confirmPassword) {
+      return setErrorPassword('Las contraseñas no coinciden.');
+    }
     try {
-      const { error } = await supabase
-        .from('laboratoristas')
-        .update({ activo: !activoActual })
-        .eq('id', id);
-
-      if (error) throw error;
-      
-      // Actualizar estado local
-      setLaboratoristas(prev => 
-        prev.map(lab => 
-          lab.id === id ? { ...lab, activo: !activoActual } : lab
-        )
-      );
-      
-      alert(`Laboratorista ${!activoActual ? 'activado' : 'desactivado'} exitosamente`);
-    } catch (error: any) {
-      console.error('Error cambiando estado:', error);
-      alert(`Error: ${error.message}`);
+      setGuardando(true);
+      const { error: errorFuncion } = await supabase.functions.invoke('gestionar-laboratorista', {
+        body: { accion: 'cambiar_password', usuario_id: modalPassword.usuario_id, password: nuevaPassword.password }
+      });
+      if (errorFuncion) {
+        setErrorPassword(await mensajeDeFuncion(errorFuncion));
+        return;
+      }
+      alert(`✅ Contraseña de ${modalPassword.nombre} actualizada.`);
+      setModalPassword(null);
+    } finally {
+      setGuardando(false);
     }
   };
 
-  // Estilos mejorados
-  const styles = {
-    container: {
-      minHeight: '100vh',
-      backgroundColor: '#f8fafc',
-      padding: '2rem'
-    },
-    header: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '2rem',
-      flexWrap: 'wrap' as const,
-      gap: '1rem'
-    },
-    title: {
-      color: '#1e293b',
-      fontSize: '1.75rem',
-      fontWeight: 'bold',
-      margin: 0
-    },
-    button: {
-      backgroundColor: '#3b82f6',
-      color: 'white',
-      padding: '0.75rem 1.5rem',
-      border: 'none',
-      borderRadius: '0.5rem',
-      cursor: 'pointer',
-      fontSize: '1rem',
-      fontWeight: '600',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '0.5rem',
-      transition: 'background-color 0.2s'
-    },
-    table: {
-      width: '100%',
-      backgroundColor: 'white',
-      borderRadius: '0.75rem',
-      overflow: 'hidden',
-      boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-    },
-    tableHeader: {
-      backgroundColor: '#f1f5f9',
-      padding: '1rem',
-      textAlign: 'left' as const,
-      fontWeight: '600',
-      color: '#475569',
-      borderBottom: '1px solid #e2e8f0'
-    },
-    tableCell: {
-      padding: '1rem',
-      borderBottom: '1px solid #e2e8f0'
-    },
-    badge: (activo: boolean) => ({
-      backgroundColor: activo ? '#10b98120' : '#ef444420',
-      color: activo ? '#10b981' : '#ef4444',
-      padding: '0.375rem 0.75rem',
-      borderRadius: '1rem',
-      fontSize: '0.875rem',
-      fontWeight: '600',
-      cursor: 'pointer',
-      border: `1px solid ${activo ? '#10b981' : '#ef4444'}`,
-      transition: 'all 0.2s'
-    }),
-    loadingContainer: {
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: '3rem'
-    },
-    errorContainer: {
-      backgroundColor: '#fef2f2',
-      color: '#dc2626',
-      padding: '1rem',
-      borderRadius: '0.5rem',
-      marginBottom: '1rem',
-      border: '1px solid #fca5a5'
-    }
-  };
+  // ---------------- Piezas de la vista ----------------
+  const renderEstado = (lab: Laboratorista) => (
+    <span style={lab.activo ? styles.badgeActivo : styles.badgeInactivo}>
+      {lab.activo ? '● Activo' : '○ Desactivado'}
+    </span>
+  );
 
-  return (
-    <div style={styles.container}>
-      {/* Header */}
-      <div style={styles.header}>
-        <div>
-          <button 
-            style={{
-              backgroundColor: '#64748b',
-              color: 'white',
-              padding: '0.5rem 1rem',
-              border: 'none',
-              borderRadius: '0.5rem',
-              cursor: 'pointer',
-              marginBottom: '1rem'
-            }}
-            onClick={() => onBack ? onBack() : navigate('/dashboard')}
-          >
-            ← Volver
-          </button>
-          <h1 style={styles.title}>👨‍🔧 Gestión de Laboratoristas</h1>
-          <p style={{ color: '#64748b', marginTop: '0.25rem' }}>
-            {laboratoristas.length} laboratoristas registrados
-          </p>
-        </div>
-        
-        <button 
-          style={styles.button}
-          onClick={() => setModalAbierto(true)}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
-        >
-          + Nuevo Laboratorista
-        </button>
-      </div>
+  const renderSwitch = (lab: Laboratorista) => (
+    <label style={{ ...styles.switchLabel, opacity: lab.activo ? 1 : 0.5 }} title="Habilita el Registro de Entregas">
+      <input
+        type="checkbox"
+        role="switch"
+        aria-checked={lab.puede_despachar}
+        checked={lab.puede_despachar}
+        disabled={!lab.activo}
+        onChange={() => cambiarDespacho(lab)}
+        style={styles.switchInput}
+      />
+      <span
+        aria-hidden="true"
+        style={{ ...styles.switchTrack, backgroundColor: lab.puede_despachar ? '#059669' : '#cbd5e1' }}
+      >
+        <span style={{ ...styles.switchThumb, transform: lab.puede_despachar ? 'translateX(18px)' : 'translateX(0)' }} />
+      </span>
+      <span style={styles.switchText}>{lab.puede_despachar ? 'Sí' : 'No'}</span>
+    </label>
+  );
 
-      {/* Mostrar error si existe */}
-      {error && (
-        <div style={styles.errorContainer}>
-          <strong>⚠️ Error:</strong> {error}
-        </div>
-      )}
-
-      {/* Contenido */}
-      {cargando ? (
-        <div style={styles.loadingContainer}>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column' as const,
-            alignItems: 'center',
-            gap: '1rem'
-          }}>
-            <div style={{
-              width: '40px',
-              height: '40px',
-              border: '4px solid #3b82f6',
-              borderTopColor: 'transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }}></div>
-            <p style={{ color: '#64748b' }}>Cargando laboratoristas...</p>
-          </div>
-        </div>
-      ) : (
-        <div style={styles.table}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={styles.tableHeader}>Nombre</th>
-                <th style={styles.tableHeader}>Email</th>
-                <th style={styles.tableHeader}>Teléfono</th>
-                <th style={styles.tableHeader}>Especialidad</th>
-                <th style={styles.tableHeader}>Estado</th>
-                <th style={styles.tableHeader}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {laboratoristas.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ 
-                    ...styles.tableCell, 
-                    textAlign: 'center',
-                    color: '#64748b',
-                    padding: '3rem'
-                  }}>
-                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>👨‍🔧</div>
-                    <p style={{ marginBottom: '1rem' }}>
-                      No hay laboratoristas registrados
-                    </p>
-                    <button 
-                      style={styles.button}
-                      onClick={() => setModalAbierto(true)}
-                    >
-                      + Crear Primer Laboratorista
-                    </button>
-                  </td>
-                </tr>
-              ) : (
-                laboratoristas.map((lab) => (
-                  <tr 
-                    key={lab.id}
-                    style={{ 
-                      transition: 'background-color 0.2s',
-                      borderBottom: '1px solid #f1f5f9'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
-                  >
-                    <td style={styles.tableCell}>
-                      <strong>{lab.nombre}</strong>
-                      {lab.suscripcion && (
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.25rem' }}>
-                          Plan: {lab.suscripcion}
-                        </div>
-                      )}
-                    </td>
-                    <td style={styles.tableCell}>{lab.email}</td>
-                    <td style={styles.tableCell}>{lab.telefono || 'No especificado'}</td>
-                    <td style={styles.tableCell}>{lab.especialidad || 'General'}</td>
-                    <td style={styles.tableCell}>
-                      <button
-                        style={styles.badge(lab.activo)}
-                        onClick={() => cambiarEstado(lab.id, lab.activo)}
-                        onMouseEnter={(e) => e.currentTarget.style.opacity = '0.8'}
-                        onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-                      >
-                        {lab.activo ? '✅ Activo' : '❌ Inactivo'}
-                      </button>
-                    </td>
-                    <td style={styles.tableCell}>
-                      <button
-                        style={{
-                          backgroundColor: '#3b82f6',
-                          color: 'white',
-                          padding: '0.375rem 0.75rem',
-                          border: 'none',
-                          borderRadius: '0.375rem',
-                          cursor: 'pointer',
-                          fontSize: '0.875rem',
-                          marginRight: '0.5rem'
-                        }}
-                        onClick={() => {
-                          const mensaje = `Hola ${lab.nombre},\n\nTus credenciales para acceder a DentalFlow son:\n\nEmail: ${lab.email}\nContraseña: [la que estableciste]\n\nAccede en: [URL del sistema]\n\nSaludos.`;
-                          navigator.clipboard.writeText(mensaje);
-                          alert('Mensaje copiado al portapapeles. Envíalo al laboratorista.');
-                        }}
-                      >
-                        📋 Enviar Recordatorio
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Modal para crear laboratorista */}
-      {modalAbierto && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000,
-          padding: '1rem'
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '2rem',
-            borderRadius: '1rem',
-            width: '100%',
-            maxWidth: '500px',
-            maxHeight: '90vh',
-            overflow: 'auto'
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '1.5rem'
-            }}>
-              <h2 style={{ margin: 0, color: '#1e293b' }}>Crear Nuevo Laboratorista</h2>
-              <button
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '1.5rem',
-                  cursor: 'pointer',
-                  color: '#64748b'
-                }}
-                onClick={() => {
-                  if (formData.nombre || formData.email || formData.password) {
-                    if (window.confirm('¿Cancelar? Se perderán los datos ingresados.')) {
-                      setModalAbierto(false);
-                      resetForm();
-                    }
-                  } else {
-                    setModalAbierto(false);
-                  }
-                }}
-              >
-                ×
-              </button>
-            </div>
-            
-            <p style={{ color: '#64748b', marginBottom: '1.5rem' }}>
-              El laboratorista recibirá un email con sus credenciales para iniciar sesión.
-            </p>
-            
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-                Nombre completo *
-              </label>
-              <input
-                type="text"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '0.5rem',
-                  fontSize: '1rem'
-                }}
-                value={formData.nombre}
-                onChange={(e) => setFormData({...formData, nombre: e.target.value})}
-                placeholder="Ej: Carlos Rodríguez"
-                required
-              />
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-                Email *
-              </label>
-              <input
-                type="email"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '0.5rem',
-                  fontSize: '1rem'
-                }}
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-                placeholder="laboratorista@email.com"
-                required
-              />
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-                Teléfono
-              </label>
-              <input
-                type="tel"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '0.5rem',
-                  fontSize: '1rem'
-                }}
-                value={formData.telefono}
-                onChange={(e) => setFormData({...formData, telefono: e.target.value})}
-                placeholder="+56 9 1234 5678"
-              />
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-                Especialidad
-              </label>
-              <select
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '0.5rem',
-                  fontSize: '1rem',
-                  backgroundColor: 'white'
-                }}
-                value={formData.especialidad}
-                onChange={(e) => setFormData({...formData, especialidad: e.target.value})}
-              >
-                {especialidades.map(esp => (
-                  <option key={esp} value={esp}>{esp}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-                Contraseña *
-              </label>
-              <input
-                type="password"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '0.5rem',
-                  fontSize: '1rem'
-                }}
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-                placeholder="Mínimo 6 caracteres"
-                required
-              />
-            </div>
-
-            <div style={{ marginBottom: '2rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-                Confirmar contraseña *
-              </label>
-              <input
-                type="password"
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '0.5rem',
-                  fontSize: '1rem'
-                }}
-                value={formData.confirmPassword}
-                onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
-                placeholder="Repite la contraseña"
-                required
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-              <button 
-                style={{
-                  backgroundColor: '#64748b',
-                  color: 'white',
-                  padding: '0.75rem 1.5rem',
-                  border: 'none',
-                  borderRadius: '0.5rem',
-                  cursor: 'pointer',
-                  fontWeight: '600'
-                }}
-                onClick={() => {
-                  setModalAbierto(false);
-                  resetForm();
-                }}
-                disabled={cargando}
-              >
-                Cancelar
-              </button>
-              <button 
-                style={{
-                  backgroundColor: cargando ? '#94a3b8' : '#10b981',
-                  color: 'white',
-                  padding: '0.75rem 1.5rem',
-                  border: 'none',
-                  borderRadius: '0.5rem',
-                  cursor: cargando ? 'not-allowed' : 'pointer',
-                  fontWeight: '600',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem'
-                }}
-                onClick={crearLaboratorista}
-                disabled={cargando}
-              >
-                {cargando ? (
-                  <>
-                    <div style={{
-                      width: '16px',
-                      height: '16px',
-                      border: '2px solid white',
-                      borderTopColor: 'transparent',
-                      borderRadius: '50%',
-                      animation: 'spin 1s linear infinite'
-                    }}></div>
-                    Creando...
-                  </>
-                ) : 'Crear Laboratorista'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
+  const renderAcciones = (lab: Laboratorista, ancho = false) => (
+    <div style={{ ...styles.actionsCell, ...(ancho ? styles.actionsCellAncho : {}) }}>
+      <button
+        onClick={() => abrirPassword(lab)}
+        style={{ ...styles.secondaryButtonSmall, ...(ancho ? { flex: '1 1 140px' } : {}) }}
+        disabled={!lab.activo}
+        title="Definir una nueva contraseña"
+      >
+        🔑 Contraseña
+      </button>
+      <button
+        onClick={() => cambiarActivo(lab)}
+        style={{ ...(lab.activo ? styles.deactivateButton : styles.activateButton), ...(ancho ? { flex: '1 1 120px' } : {}) }}
+      >
+        {lab.activo ? '⏸ Desactivar' : '▶ Activar'}
+      </button>
     </div>
   );
+
+  // ---------------- Render ----------------
+  return (
+    <>
+      <Header
+        user={usuario ? {
+          id: usuario.id,
+          email: usuario.email,
+          nombre: usuario.user_metadata?.nombre || usuario.email?.split('@')[0] || 'Usuario',
+          rol: 'admin',
+          laboratorio: membresia.laboratorio || 'Laboratorio'
+        } : undefined}
+        onLogout={handleLogout}
+        showBackButton
+        onBack={handleVolver}
+        title="Laboratoristas"
+        showTitle
+      />
+
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={styles.title}>👨‍🔧 Mis Laboratoristas</h1>
+            <p style={styles.subtitle}>
+              {activos} activo(s) de {laboratoristas.length}. Ven las clínicas y trabajos del laboratorio, pero nunca los precios.
+            </p>
+          </div>
+          <button
+            onClick={abrirNuevo}
+            style={{ ...styles.addButton, ...(!puedeCrear ? styles.addButtonDisabled : {}) }}
+            disabled={!puedeCrear}
+          >
+            + Nuevo Laboratorista
+          </button>
+        </div>
+
+        {!membresia.cargando && membresia.soloLectura && (
+          <div style={styles.avisoSoloLectura} role="status">
+            ⚠️ Tu plan está vencido: puedes ver y desactivar laboratoristas, pero no agregar nuevos.
+          </div>
+        )}
+
+        {error && <div style={styles.avisoError}>{error}</div>}
+
+        {cargando ? (
+          <div style={styles.loadingText}>Cargando laboratoristas...</div>
+        ) : laboratoristas.length === 0 ? (
+          <div style={styles.emptyState}>
+            <p style={{ margin: '0 0 16px 0' }}>Aún no tienes laboratoristas.</p>
+            <p style={{ margin: '0 0 20px 0', fontSize: '14px' }}>
+              Crea una cuenta para cada persona del laboratorio. Podrá iniciar sesión con su email y la contraseña que definas.
+            </p>
+            {puedeCrear && (
+              <button onClick={abrirNuevo} style={styles.addButton}>+ Crear el primero</button>
+            )}
+          </div>
+        ) : vistaTarjetas ? (
+          <div style={styles.cardsList}>
+            {laboratoristas.map(lab => (
+              <div key={lab.id} style={{ ...styles.card, ...(lab.activo ? {} : styles.cardInactiva) }}>
+                <div style={styles.cardTop}>
+                  <h3 style={styles.cardNombre}>{lab.nombre}</h3>
+                  {renderEstado(lab)}
+                </div>
+                <dl style={styles.cardDatos}>
+                  <dt style={styles.cardLabel}>Email</dt>
+                  <dd style={{ ...styles.cardValor, ...styles.textoLargo }}>{lab.email || '—'}</dd>
+                  <dt style={styles.cardLabel}>Teléfono</dt>
+                  <dd style={styles.cardValor}>{lab.telefono || '—'}</dd>
+                  <dt style={styles.cardLabel}>Especialidad</dt>
+                  <dd style={styles.cardValor}>{lab.especialidad || '—'}</dd>
+                  <dt style={styles.cardLabel}>Despacho</dt>
+                  <dd style={styles.cardValor}>{renderSwitch(lab)}</dd>
+                </dl>
+                {renderAcciones(lab, true)}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Laboratorista</th>
+                  <th style={styles.th}>Contacto</th>
+                  <th style={styles.th}>Especialidad</th>
+                  <th style={styles.th}>Estado</th>
+                  <th style={styles.th} title="Habilita el Registro de Entregas">Puede despachar</th>
+                  <th style={{ ...styles.th, textAlign: 'right' }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {laboratoristas.map(lab => (
+                  <tr key={lab.id} style={lab.activo ? undefined : styles.rowInactiva}>
+                    <td style={{ ...styles.td, ...styles.nombreCell }}>{lab.nombre}</td>
+                    <td style={styles.td}>
+                      <div style={styles.textoLargo}>✉️ {lab.email || '—'}</div>
+                      {lab.telefono && <div style={{ whiteSpace: 'nowrap' }}>📞 {lab.telefono}</div>}
+                    </td>
+                    <td style={styles.td}>{lab.especialidad || <span style={styles.emptyCell}>—</span>}</td>
+                    <td style={styles.td}>{renderEstado(lab)}</td>
+                    <td style={styles.td}>{renderSwitch(lab)}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{renderAcciones(lab)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ---------- Modal: nuevo laboratorista ---------- */}
+        {modalNuevo && (
+          <div style={styles.modalOverlay}>
+            <div style={styles.modalContent} role="dialog" aria-modal="true" aria-labelledby="titulo-nuevo-lab">
+              <div style={styles.modalHeader}>
+                <h2 id="titulo-nuevo-lab" style={styles.modalTitle}>👨‍🔧 Nuevo Laboratorista</h2>
+                <button onClick={() => setModalNuevo(false)} style={styles.closeButton} aria-label="Cerrar">✕</button>
+              </div>
+
+              <form onSubmit={crearLaboratorista}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label} htmlFor="lab-nombre">Nombre completo *</label>
+                  <input id="lab-nombre" style={styles.input} value={form.nombre} autoComplete="off"
+                    onChange={e => setForm(p => ({ ...p, nombre: e.target.value }))} placeholder="Ej: Eduardo Tillería" />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label} htmlFor="lab-email">Email (con este inicia sesión) *</label>
+                  <input id="lab-email" type="email" style={styles.input} value={form.email} autoComplete="off"
+                    onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="Ej: eduardo@milaboratorio.cl" />
+                </div>
+                <div style={styles.formRow}>
+                  <div style={{ ...styles.formGroup, flex: '1 1 180px' }}>
+                    <label style={styles.label} htmlFor="lab-telefono">Teléfono</label>
+                    <input id="lab-telefono" type="tel" style={styles.input} value={form.telefono}
+                      onChange={e => setForm(p => ({ ...p, telefono: e.target.value }))} placeholder="+56 9 1234 5678" />
+                  </div>
+                  <div style={{ ...styles.formGroup, flex: '1 1 180px' }}>
+                    <label style={styles.label} htmlFor="lab-especialidad">Especialidad</label>
+                    <select id="lab-especialidad" style={styles.input} value={form.especialidad}
+                      onChange={e => setForm(p => ({ ...p, especialidad: e.target.value }))}>
+                      {ESPECIALIDADES.map(esp => <option key={esp} value={esp}>{esp}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={styles.formRow}>
+                  <div style={{ ...styles.formGroup, flex: '1 1 180px' }}>
+                    <label style={styles.label} htmlFor="lab-pass">Contraseña *</label>
+                    <input id="lab-pass" type="password" style={styles.input} value={form.password} autoComplete="new-password"
+                      onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder={`Mínimo ${LARGO_MINIMO_PASSWORD} caracteres`} />
+                  </div>
+                  <div style={{ ...styles.formGroup, flex: '1 1 180px' }}>
+                    <label style={styles.label} htmlFor="lab-pass2">Repetir contraseña *</label>
+                    <input id="lab-pass2" type="password" style={styles.input} value={form.confirmPassword} autoComplete="new-password"
+                      onChange={e => setForm(p => ({ ...p, confirmPassword: e.target.value }))} />
+                  </div>
+                </div>
+
+                <label style={styles.checkboxRow}>
+                  <input type="checkbox" checked={form.puede_despachar}
+                    onChange={e => setForm(p => ({ ...p, puede_despachar: e.target.checked }))} />
+                  <span>
+                    <strong>Puede despachar</strong><br />
+                    <small style={{ color: '#64748b' }}>Habilita el Registro de Entregas. Puedes cambiarlo después.</small>
+                  </span>
+                </label>
+
+                {errorForm && <div style={styles.errorText} role="alert">{errorForm}</div>}
+
+                <div style={styles.buttonGroup}>
+                  <button type="button" onClick={() => setModalNuevo(false)} style={styles.cancelButton} disabled={guardando}>
+                    Cancelar
+                  </button>
+                  <button type="submit" style={styles.submitButton} disabled={guardando}>
+                    {guardando ? 'Creando...' : 'Crear Laboratorista'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ---------- Modal: cambiar contraseña ---------- */}
+        {modalPassword && (
+          <div style={styles.modalOverlay}>
+            <div style={styles.modalContent} role="dialog" aria-modal="true" aria-labelledby="titulo-pass">
+              <div style={styles.modalHeader}>
+                <h2 id="titulo-pass" style={styles.modalTitle}>🔑 Nueva contraseña</h2>
+                <button onClick={() => setModalPassword(null)} style={styles.closeButton} aria-label="Cerrar">✕</button>
+              </div>
+              <p style={{ marginTop: 0, color: '#475569' }}>
+                Para <strong>{modalPassword.nombre}</strong> ({modalPassword.email}). Comunícale la nueva contraseña por un medio seguro.
+              </p>
+              <form onSubmit={guardarPassword}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label} htmlFor="np1">Nueva contraseña *</label>
+                  <input id="np1" type="password" style={styles.input} autoComplete="new-password"
+                    value={nuevaPassword.password}
+                    onChange={e => setNuevaPassword(p => ({ ...p, password: e.target.value }))}
+                    placeholder={`Mínimo ${LARGO_MINIMO_PASSWORD} caracteres`} />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label} htmlFor="np2">Repetir contraseña *</label>
+                  <input id="np2" type="password" style={styles.input} autoComplete="new-password"
+                    value={nuevaPassword.confirmPassword}
+                    onChange={e => setNuevaPassword(p => ({ ...p, confirmPassword: e.target.value }))} />
+                </div>
+                {errorPassword && <div style={styles.errorText} role="alert">{errorPassword}</div>}
+                <div style={styles.buttonGroup}>
+                  <button type="button" onClick={() => setModalPassword(null)} style={styles.cancelButton} disabled={guardando}>
+                    Cancelar
+                  </button>
+                  <button type="submit" style={styles.submitButton} disabled={guardando}>
+                    {guardando ? 'Guardando...' : 'Guardar contraseña'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
+
+// ============================================
+// ESTILOS (misma paleta que Gestión de Clínicas)
+// ============================================
+const styles: { [key: string]: React.CSSProperties } = {
+  container: {
+    padding: '20px clamp(12px, 3vw, 20px)',
+    backgroundColor: '#f8fafc',
+    minHeight: '100vh',
+    maxWidth: '1400px',
+    margin: '0 auto',
+    marginTop: '64px'
+  },
+  header: {
+    marginBottom: '24px',
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '15px',
+    flexWrap: 'wrap'
+  },
+  title: { margin: 0, color: '#1f2937', fontSize: 'clamp(22px, 4vw, 28px)', fontWeight: 'bold' },
+  subtitle: { margin: '6px 0 0 0', color: '#64748b', fontSize: '14px' },
+  addButton: {
+    padding: '12px 24px', backgroundColor: '#2563eb', color: 'white', border: 'none',
+    borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '14px'
+  },
+  addButtonDisabled: { backgroundColor: '#94a3b8', cursor: 'not-allowed', opacity: 0.7 },
+  tableWrapper: {
+    backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '12px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)', overflowX: 'auto', marginBottom: '40px'
+  },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '14px' },
+  th: {
+    textAlign: 'left', padding: '12px 14px', backgroundColor: '#f8fafc', color: '#475569',
+    fontSize: '12px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.03em',
+    borderBottom: '1px solid #e5e7eb', whiteSpace: 'nowrap'
+  },
+  td: { padding: '12px 14px', borderBottom: '1px solid #f1f5f9', color: '#374151', verticalAlign: 'middle' },
+  rowInactiva: { backgroundColor: '#f8fafc', color: '#94a3b8' },
+  nombreCell: { fontWeight: '600', color: '#1f2937', minWidth: '140px' },
+  emptyCell: { color: '#cbd5e1' },
+  textoLargo: { overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  badgeActivo: {
+    display: 'inline-block', color: '#047857', backgroundColor: '#ecfdf5', border: '1px solid #a7f3d0',
+    padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap'
+  },
+  badgeInactivo: {
+    display: 'inline-block', color: '#64748b', backgroundColor: '#f1f5f9', border: '1px solid #e2e8f0',
+    padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '600', whiteSpace: 'nowrap'
+  },
+  switchLabel: { display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer', position: 'relative' },
+  switchInput: { position: 'absolute', opacity: 0, width: '40px', height: '22px', margin: 0, cursor: 'pointer' },
+  switchTrack: {
+    width: '40px', height: '22px', borderRadius: '999px', position: 'relative',
+    transition: 'background-color 0.2s', flexShrink: 0
+  },
+  switchThumb: {
+    position: 'absolute', top: '3px', left: '3px', width: '16px', height: '16px', borderRadius: '50%',
+    backgroundColor: 'white', boxShadow: '0 1px 2px rgba(0,0,0,0.25)', transition: 'transform 0.2s'
+  },
+  switchText: { fontSize: '13px', fontWeight: '600', color: '#374151' },
+  actionsCell: { display: 'flex', justifyContent: 'flex-end', gap: '8px', whiteSpace: 'nowrap' },
+  actionsCellAncho: { justifyContent: 'stretch', flexWrap: 'wrap', whiteSpace: 'normal' },
+  secondaryButtonSmall: {
+    padding: '6px 12px', backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1',
+    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600'
+  },
+  deactivateButton: {
+    padding: '6px 12px', backgroundColor: 'white', color: '#b91c1c', border: '1px solid #fca5a5',
+    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600'
+  },
+  activateButton: {
+    padding: '6px 12px', backgroundColor: '#059669', color: 'white', border: 'none',
+    borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '600'
+  },
+  cardsList: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))',
+    gap: '16px', marginBottom: '40px'
+  },
+  card: {
+    backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '16px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)', minWidth: 0
+  },
+  cardInactiva: { backgroundColor: '#f8fafc' },
+  cardTop: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px',
+    flexWrap: 'wrap', marginBottom: '12px'
+  },
+  cardNombre: { margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#1f2937', overflowWrap: 'anywhere' },
+  cardDatos: {
+    display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: '12px', rowGap: '8px',
+    margin: '0 0 14px 0', fontSize: '14px', alignItems: 'center'
+  },
+  cardLabel: {
+    color: '#6b7280', fontWeight: '600', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.03em'
+  },
+  cardValor: { margin: 0, color: '#374151', minWidth: 0 },
+  avisoSoloLectura: {
+    backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#7f1d1d',
+    padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px'
+  },
+  avisoError: {
+    backgroundColor: '#fef2f2', border: '1px solid #fca5a5', color: '#b91c1c',
+    padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px'
+  },
+  loadingText: { textAlign: 'center', color: '#6b7280', padding: '40px', fontSize: '16px' },
+  emptyState: {
+    textAlign: 'center', color: '#6b7280', padding: '40px 20px', backgroundColor: 'white',
+    borderRadius: '12px', border: '2px dashed #d1d5db'
+  },
+  modalOverlay: {
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px'
+  },
+  modalContent: {
+    backgroundColor: 'white', padding: 'clamp(18px, 4vw, 30px)', borderRadius: '12px',
+    width: '100%', maxWidth: '560px', maxHeight: '92vh', overflow: 'auto', boxSizing: 'border-box'
+  },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px' },
+  modalTitle: { margin: 0, color: '#1f2937', fontSize: 'clamp(19px, 4vw, 24px)', fontWeight: 'bold' },
+  closeButton: { background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#6b7280', padding: '4px' },
+  formRow: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
+  formGroup: { marginBottom: '16px', minWidth: 0 },
+  label: { display: 'block', marginBottom: '6px', fontWeight: '600', color: '#374151', fontSize: '14px' },
+  input: {
+    width: '100%', padding: '10px 12px', border: '1px solid #d1d5db', borderRadius: '6px',
+    fontSize: '14px', boxSizing: 'border-box', backgroundColor: 'white'
+  },
+  checkboxRow: {
+    display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px', backgroundColor: '#f0f9ff',
+    borderRadius: '8px', borderLeft: '4px solid #2563eb', cursor: 'pointer', fontSize: '14px', color: '#1f2937'
+  },
+  errorText: {
+    color: '#b91c1c', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px',
+    padding: '8px 12px', fontSize: '13px', marginTop: '14px'
+  },
+  buttonGroup: { display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', flexWrap: 'wrap' },
+  cancelButton: {
+    padding: '10px 20px', backgroundColor: '#6b7280', color: 'white', border: 'none',
+    borderRadius: '6px', cursor: 'pointer', fontWeight: '500'
+  },
+  submitButton: {
+    padding: '10px 20px', backgroundColor: '#2563eb', color: 'white', border: 'none',
+    borderRadius: '6px', cursor: 'pointer', fontWeight: '500'
+  }
 };
 
 export default GestionLaboratoristas;

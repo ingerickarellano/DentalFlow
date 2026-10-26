@@ -62,6 +62,19 @@ const Login: React.FC = () => {
         throw new Error('No se encontró el perfil de usuario. Contacta al administrador.');
       }
 
+      // 5. Un laboratorista desactivado por su administrador no puede entrar
+      if (perfil.rol === 'laboratorista') {
+        const { data: ficha } = await supabase
+          .from('laboratoristas')
+          .select('activo')
+          .eq('usuario_id', userId)
+          .maybeSingle();
+        if (!ficha || !ficha.activo) {
+          await supabase.auth.signOut();
+          throw new Error('Tu cuenta de laboratorista está desactivada. Contacta al administrador de tu laboratorio.');
+        }
+      }
+
       window.location.href = '/dashboard';
 
     } catch (error: any) {

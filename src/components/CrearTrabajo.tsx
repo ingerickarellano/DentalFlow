@@ -212,7 +212,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         const { data: clinicasData } = await supabase
           .from('clinicas')
           .select('*')
-          .eq('usuario_id', user.id)
           .order('nombre');
         setClinicas(clinicasData || []);
 
@@ -220,7 +219,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         const { data: dentistasData } = await supabase
           .from('dentistas')
           .select('*')
-          .eq('usuario_id', user.id)
           .order('nombre');
         setDentistas(dentistasData || []);
 
