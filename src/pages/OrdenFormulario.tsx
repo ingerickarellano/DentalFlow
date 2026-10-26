@@ -174,7 +174,7 @@ const OrdenFormulario: React.FC = () => {
       const [clinicasRes, dentistasRes, laboratoristasRes] = await Promise.all([
         supabase.from('clinicas').select('id,nombre'),
         supabase.from('dentistas').select('id,nombre,clinica_id'),
-        supabase.from('laboratoristas').select('id,nombre').eq('usuario_id', user.id),
+        supabase.from('laboratoristas').select('id,nombre').order('nombre'),
       ]);
       setClinicas(clinicasRes.data || []);
       setDentistas(dentistasRes.data || []);

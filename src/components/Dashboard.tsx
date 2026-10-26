@@ -301,9 +301,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   ];
 
   // Laboratorista: mismas herramientas de trabajo que el admin, sin precios ni administración.
-  // (Crear Trabajo y Mis Trabajos se habilitan en la entrega 1b-2; Órdenes y Entregas en la 1b-3.)
+  // (Órdenes de Trabajo y Registro de Entregas se habilitan en la entrega 1b-3.)
   const modulesLaboratorista: Module[] = [
-    { id: 'clinicas', icon: '🏥', title: 'Clínicas y Dentistas', description: 'Clínicas y odontólogos del laboratorio.', path: '/clinicas' }
+    { id: 'clinicas', icon: '🏥', title: 'Clínicas y Dentistas', description: 'Clínicas y odontólogos del laboratorio.', path: '/clinicas' },
+    { id: 'crear-trabajo', icon: '📋', title: 'Crear Lista de Trabajo', description: 'Registra trabajos seleccionando clínica, dentista y servicios del catálogo.', path: '/crear-trabajo' },
+    { id: 'trabajos-proceso', icon: '🔧', title: 'Mis Trabajos', description: 'Los trabajos que creaste o que te asignaron: estados, notas e impresión.', path: '/trabajos' }
   ];
 
   const modules = user.rol === 'super_admin'

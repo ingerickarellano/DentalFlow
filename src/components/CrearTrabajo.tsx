@@ -131,6 +131,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [rutPaciente, setRutPaciente] = useState<string>('');
   const [trabajosAgregados, setTrabajosAgregados] = useState<TrabajoAgregado[]>([]);
   const [modoDetallado, setModoDetallado] = useState<boolean>(false);
+  // Laboratorista: crea trabajos sin ver precios (la base de datos los calcula)
+  const [esLaboratorista, setEsLaboratorista] = useState<boolean>(false);
+  const [miFichaLaboratorista, setMiFichaLaboratorista] = useState<string>('');
   const [idioma, setIdioma] = useState<IdiomaType>('es');
   const [cantidades, setCantidades] = useState<{ [key: string]: number }>({});
   const [piezasDentales, setPiezasDentales] = useState<{ [key: string]: string }>({});
@@ -208,6 +211,14 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
+        const { data: perfilRol } = await supabase
+          .from('perfiles_usuarios')
+          .select('rol')
+          .eq('id', user.id)
+          .maybeSingle();
+        const laboratorista = perfilRol?.rol === 'laboratorista';
+        setEsLaboratorista(laboratorista);
+
         // Clínicas
         const { data: clinicasData } = await supabase
           .from('clinicas')
@@ -222,15 +233,21 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
           .order('nombre');
         setDentistas(dentistasData || []);
 
-        // Laboratoristas
+        // Laboratoristas del laboratorio (el laboratorista solo recibe su propia ficha)
         const { data: laboratoristasData } = await supabase
           .from('laboratoristas')
           .select('*')
-          .eq('usuario_id', user.id)
           .order('nombre');
         setLaboratoristas(laboratoristasData || []);
+        if (laboratorista) {
+          const propia = (laboratoristasData || []).find((l: any) => l.usuario_id === user.id);
+          if (propia) {
+            setMiFichaLaboratorista(propia.id);
+            setLaboratoristaSeleccionado(propia.id);
+          }
+        }
 
-        await cargarServicios();
+        await cargarServicios(laboratorista);
       } catch (error) {
         console.error('Error cargando datos:', error);
       } finally {
@@ -240,22 +257,22 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     cargarDatosIniciales();
   }, []);
 
-  const cargarServicios = async () => {
+  const cargarServicios = async (laboratorista: boolean) => {
     try {
       setCargandoServicios(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Admin: catálogo con precios. Laboratorista: catálogo sin precios.
       const { data, error } = await supabase
-        .from('servicios')
+        .from(laboratorista ? 'servicios_catalogo' : 'servicios')
         .select('*') // incluye anio
-        .eq('usuario_id', user.id)
         .eq('activo', true)
         .order('categoria', { ascending: true })
         .order('nombre', { ascending: true });
 
       if (error) throw error;
-      setServicios(data || []);
+      setServicios(((data || []) as any[]).map(s => ({ ...s, precio_base: Number(s.precio_base) || 0 })));
     } catch (error: any) {
       console.error('Error cargando servicios:', error);
     } finally {
@@ -269,17 +286,18 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       setCargandoHistorial(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data, error } = await supabase
-        .from('trabajos')
-        .select(`servicios, clinica_id, created_at`)
-        .eq('usuario_id', user.id)
+      // Últimos trabajos de la clínica que el usuario puede ver
+      const { data: filas, error } = await supabase
+        .from(esLaboratorista ? 'trabajos_vista' : 'trabajos')
+        .select('servicios, clinica_id, creado_en')
         .eq('clinica_id', clinicaSeleccionada)
-        .order('created_at', { ascending: false })
+        .order('creado_en', { ascending: false })
         .limit(100);
       if (error) throw error;
+      const data = (filas || []).map((f: any) => ({ ...f, created_at: f.creado_en }));
 
       const historialMap = new Map<string, HistorialServicio>();
-      data?.forEach(trabajo => {
+      data.forEach(trabajo => {
         if (trabajo.servicios && Array.isArray(trabajo.servicios)) {
           trabajo.servicios.forEach((serv: any) => {
             if (serv.servicio_id) {
@@ -455,10 +473,11 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       }, {} as Record<string, { paciente: string, rutPaciente: string, trabajos: TrabajoAgregado[] }>);
 
       for (const [, grupo] of Object.entries(trabajosPorPaciente)) {
+        // Laboratorista: los precios los calcula la base de datos con el catálogo
         const serviciosParaBD = grupo.trabajos.map(t => ({
           servicio_id: t.servicio.id,
           cantidad: t.cantidad,
-          precio: t.precioUnitario * t.cantidad,
+          precio: esLaboratorista ? 0 : t.precioUnitario * t.cantidad,
           nombre: t.servicio.nombre,
           pieza_dental: t.piezaDental || '',
           nota_especial: t.notaEspecial || ''
@@ -467,13 +486,13 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         const fechaCreacion = new Date(parseInt(año), parseInt(mes) - 1, 1);
         const fechaEntrega = new Date(fechaCreacion);
         fechaEntrega.setDate(fechaEntrega.getDate() + 7);
-        const totalPaciente = grupo.trabajos.reduce((sum, t) => sum + (t.precioUnitario * t.cantidad), 0);
+        const totalPaciente = esLaboratorista ? 0 : grupo.trabajos.reduce((sum, t) => sum + (t.precioUnitario * t.cantidad), 0);
         const trabajoData = {
           paciente: grupo.paciente.trim(),
           rut_paciente: grupo.rutPaciente || '',
           clinica_id: clinicaSeleccionada,
           dentista_id: dentistaSeleccionado || null,
-          laboratorista_id: laboratoristaSeleccionado || null,
+          laboratorista_id: (esLaboratorista ? miFichaLaboratorista : laboratoristaSeleccionado) || null,
           servicios: serviciosParaBD,
           estado: 'pendiente',
           precio_total: totalPaciente,
@@ -494,7 +513,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       reiniciarFormulario();
     } catch (error: any) {
       console.error('Error finalizar:', error);
-      alert(idioma === 'es' ? `Error: ${error.message}` : `Error: ${error.message}`);
+      // Mensajes de la base de datos vienen con un código delante (PLAN_VENCIDO: ...)
+      const mensaje = String(error?.message || '').replace(/^[A-Z_]+:\s*/, '');
+      alert(`Error: ${mensaje}`);
     } finally {
       setGuardando(false);
     }
@@ -543,7 +564,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const reiniciarFormulario = () => {
     setClinicaSeleccionada('');
     setDentistaSeleccionado('');
-    setLaboratoristaSeleccionado('');
+    setLaboratoristaSeleccionado(esLaboratorista ? miFichaLaboratorista : '');
     setNombrePaciente('');
     setRutPaciente('');
     setTrabajosAgregados([]);
@@ -1750,8 +1771,8 @@ Color del diente: ${configDetallada.toothColor}
                 </div>
                 <div style={styles.formGroup}>
                   <label style={styles.label}>{t.laboratorista}</label>
-                  <select style={styles.select} value={laboratoristaSeleccionado} onChange={(e) => setLaboratoristaSeleccionado(e.target.value)}>
-                    <option value="">{idioma === 'es' ? 'Sin asignar' : 'Not assigned'}</option>
+                  <select style={styles.select} value={laboratoristaSeleccionado} onChange={(e) => setLaboratoristaSeleccionado(e.target.value)} disabled={esLaboratorista}>
+                    {!esLaboratorista && <option value="">{idioma === 'es' ? 'Sin asignar' : 'Not assigned'}</option>}
                     {laboratoristas.map(l => <option key={l.id} value={l.id}>{l.nombre} - {l.especialidad}</option>)}
                   </select>
                 </div>
@@ -1790,14 +1811,16 @@ Color del diente: ${configDetallada.toothColor}
 
             {clinicaSeleccionada && renderHistorialServicios()}
 
-            <div style={styles.modeSelector}>
-              <button style={{ ...styles.modeButton, ...(!modoDetallado ? styles.modeButtonActive : {}) }} onClick={() => setModoDetallado(false)}>
-                {t.modoSimple}
-              </button>
-              <button style={{ ...styles.modeButton, ...(modoDetallado ? styles.modeButtonActive : {}) }} onClick={() => setModoDetallado(true)}>
-                {t.modoDetallado}
-              </button>
-            </div>
+            {!esLaboratorista && (
+              <div style={styles.modeSelector}>
+                <button style={{ ...styles.modeButton, ...(!modoDetallado ? styles.modeButtonActive : {}) }} onClick={() => setModoDetallado(false)}>
+                  {t.modoSimple}
+                </button>
+                <button style={{ ...styles.modeButton, ...(modoDetallado ? styles.modeButtonActive : {}) }} onClick={() => setModoDetallado(true)}>
+                  {t.modoDetallado}
+                </button>
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
               <button style={styles.clearButton} onClick={limpiarTodo}
@@ -1807,7 +1830,7 @@ Color del diente: ${configDetallada.toothColor}
               </button>
             </div>
 
-            {modoDetallado ? (
+            {modoDetallado && !esLaboratorista ? (
               renderModoDetallado()
             ) : (
               <div>
@@ -1824,7 +1847,7 @@ Color del diente: ${configDetallada.toothColor}
                 <div style={styles.filtersContainer}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <div>
-                      <label style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginRight: '8px' }}>{t.filtroAnio}</label>
+                      <label style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginRight: '8px' }}>{esLaboratorista ? (idioma === 'es' ? 'Año del catálogo:' : 'Catalog year:') : t.filtroAnio}</label>
                       <select style={styles.select} value={filtroAnio} onChange={(e) => setFiltroAnio(parseInt(e.target.value))}>
                         <option value={2025}>2025</option>
                         <option value={2026}>2026</option>
@@ -1890,9 +1913,11 @@ Color del diente: ${configDetallada.toothColor}
                           </div>
                         </div>
 
-                        <div style={styles.precio}>
-                          {formatearPrecioCLP(servicio.precio_base)}
-                        </div>
+                        {!esLaboratorista && (
+                          <div style={styles.precio}>
+                            {formatearPrecioCLP(servicio.precio_base)}
+                          </div>
+                        )}
 
                         <div style={styles.controlesServicio}>
                           <div style={styles.controlesSuperiores}>
@@ -1956,10 +1981,12 @@ Color del diente: ${configDetallada.toothColor}
                                 {grupo.trabajos.length} prestaciones
                               </div>
                             </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#059669' }}>{formatearPrecioCLP(grupo.total)}</div>
-                              <div style={{ fontSize: '0.875rem', color: '#64748b' }}>Total del paciente</div>
-                            </div>
+                            {!esLaboratorista && (
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#059669' }}>{formatearPrecioCLP(grupo.total)}</div>
+                                <div style={{ fontSize: '0.875rem', color: '#64748b' }}>Total del paciente</div>
+                              </div>
+                            )}
                           </div>
                           {grupo.trabajos.map((trabajo, trabajoIndex) => (
                             <div key={trabajo.id} style={{ ...styles.trabajoItem, marginBottom: '1rem', backgroundColor: trabajoIndex % 2 === 0 ? 'white' : '#f8fafc' }}>
@@ -1976,8 +2003,12 @@ Color del diente: ${configDetallada.toothColor}
                                 </div>
                               </div>
                               <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontWeight: 700, color: '#059669', fontSize: '1.25rem' }}>{formatearPrecioCLP(trabajo.precioUnitario * trabajo.cantidad)}</div>
-                                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '0.25rem' }}>{trabajo.cantidad > 1 && `(${formatearPrecioCLP(trabajo.precioUnitario)} ${idioma === 'es' ? 'c/u' : 'each'})`}</div>
+                                {!esLaboratorista && (
+                                  <>
+                                    <div style={{ fontWeight: 700, color: '#059669', fontSize: '1.25rem' }}>{formatearPrecioCLP(trabajo.precioUnitario * trabajo.cantidad)}</div>
+                                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '0.25rem' }}>{trabajo.cantidad > 1 && `(${formatearPrecioCLP(trabajo.precioUnitario)} ${idioma === 'es' ? 'c/u' : 'each'})`}</div>
+                                  </>
+                                )}
                                 <button style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '0.375rem', background: '#ef4444', color: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: '500', marginTop: '0.75rem' }}
                                   onClick={() => eliminarTrabajo(trabajo.id)}
                                   onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
@@ -1987,16 +2018,20 @@ Color del diente: ${configDetallada.toothColor}
                               </div>
                             </div>
                           ))}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', backgroundColor: '#f1f5f9', borderRadius: '0.5rem', marginTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>{idioma === 'es' ? 'Total Paciente:' : 'Patient Total:'}</span>
-                            <span style={{ fontWeight: '700', color: '#059669' }}>{formatearPrecioCLP(grupo.total)}</span>
-                          </div>
+                          {!esLaboratorista && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', backgroundColor: '#f1f5f9', borderRadius: '0.5rem', marginTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
+                              <span style={{ fontWeight: '600', color: '#1e293b' }}>{idioma === 'es' ? 'Total Paciente:' : 'Patient Total:'}</span>
+                              <span style={{ fontWeight: '700', color: '#059669' }}>{formatearPrecioCLP(grupo.total)}</span>
+                            </div>
+                          )}
                         </div>
                       ))}
-                      <div style={styles.totalContainer}>
-                        <span style={styles.totalText}>{t.total}:</span>
-                        <span style={styles.totalAmount}>{formatearPrecioCLP(calcularTotal())}</span>
-                      </div>
+                      {!esLaboratorista && (
+                        <div style={styles.totalContainer}>
+                          <span style={styles.totalText}>{t.total}:</span>
+                          <span style={styles.totalAmount}>{formatearPrecioCLP(calcularTotal())}</span>
+                        </div>
+                      )}
                       <div style={{ textAlign: 'center', marginTop: '2rem' }}>
                         <button style={{ ...styles.addButton, padding: '1rem 3rem', fontSize: '1.125rem', opacity: puedeFinalizar ? 1 : 0.5, cursor: puedeFinalizar ? 'pointer' : 'not-allowed', backgroundColor: '#10b981' }}
                           onClick={finalizarTrabajo} disabled={!puedeFinalizar || guardando}

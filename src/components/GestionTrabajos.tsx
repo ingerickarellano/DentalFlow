@@ -168,6 +168,16 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
   const [nuevaNotaEspecial, setNuevaNotaEspecial] = useState('');
 
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
+  // Laboratorista: ve los trabajos que creó o le asignaron, sin precios.
+  // Sus cambios pasan por funciones de la base de datos que validan el acceso.
+  const [esLaboratorista, setEsLaboratorista] = useState(false);
+  const [puedeDespachar, setPuedeDespachar] = useState(true);
+
+  // Los mensajes de la base de datos vienen con un código delante (NO_AUTORIZADO: ...)
+  const mensajeDeError = (error: any, porDefecto: string) => {
+    const texto = String(error?.message || '');
+    return /^[A-Z_]+:\s*/.test(texto) ? texto.replace(/^[A-Z_]+:\s*/, '') : porDefecto;
+  };
 
   const añosDisponibles = () => {
     const añoActual = new Date().getFullYear();
@@ -215,20 +225,43 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         return;
       }
 
-      const [trabajosRes, clinicasRes, dentistasRes, serviciosRes, laboratoristasRes] =
+      const { data: perfilRol } = await supabase
+        .from('perfiles_usuarios')
+        .select('rol')
+        .eq('id', user.id)
+        .maybeSingle();
+      const laboratorista = perfilRol?.rol === 'laboratorista';
+      setEsLaboratorista(laboratorista);
+
+      // Admin: todos los trabajos del laboratorio (incluye los que crean sus laboratoristas).
+      // Laboratorista: vista sin precios con los que creó o le asignaron.
+      const [trabajosRes, clinicasRes, dentistasRes, serviciosRes, laboratoristasRes, despachoRes] =
         await Promise.all([
-          supabase.from('trabajos').select('*').eq('usuario_id', user.id).order('fecha_creacion', { ascending: false }),
+          supabase.from(laboratorista ? 'trabajos_vista' : 'trabajos').select('*').order('fecha_creacion', { ascending: false }),
           supabase.from('clinicas').select('*'),
           supabase.from('dentistas').select('*'),
-          supabase.from('servicios').select('*').eq('usuario_id', user.id),
-          supabase.from('laboratoristas').select('*').eq('usuario_id', user.id)
+          supabase.from(laboratorista ? 'servicios_catalogo' : 'servicios').select('*'),
+          supabase.from('laboratoristas').select('*'),
+          laboratorista ? supabase.rpc('puede_despachar') : Promise.resolve({ data: true, error: null })
         ]);
 
-      if (trabajosRes.data) setTrabajos(trabajosRes.data);
+      if (trabajosRes.error) throw trabajosRes.error;
+      if (trabajosRes.data) {
+        const filas = (trabajosRes.data as any[]).map(t => laboratorista
+          ? {
+              ...t,
+              usuario_id: t.creado_por,
+              precio_total: 0,
+              servicios: (Array.isArray(t.servicios) ? t.servicios : []).map((sv: any) => ({ ...sv, precio: 0 }))
+            }
+          : { ...t, servicios: Array.isArray(t.servicios) ? t.servicios : [] });
+        setTrabajos(filas as Trabajo[]);
+      }
       if (clinicasRes.data) setClinicas(clinicasRes.data);
       if (dentistasRes.data) setDentistas(dentistasRes.data);
-      if (serviciosRes.data) setServicios(serviciosRes.data);
+      if (serviciosRes.data) setServicios((serviciosRes.data as any[]).map(sv => ({ ...sv, precio_base: Number(sv.precio_base) || 0 })));
       if (laboratoristasRes.data) setLaboratoristas(laboratoristasRes.data);
+      setPuedeDespachar(despachoRes.data !== false);
 
     } catch (error) {
       console.error('Error cargando datos:', error);
@@ -350,10 +383,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
 
     try {
       setCargando(true);
-      const { error } = await supabase
-        .from('trabajos')
-        .update({ estado: nuevoEstado })
-        .in('id', trabajoAgrupado.ids);
+      const { error } = esLaboratorista
+        ? await supabase.rpc('cambiar_estado_trabajos', { p_ids: trabajoAgrupado.ids, p_estado: nuevoEstado })
+        : await supabase
+            .from('trabajos')
+            .update({ estado: nuevoEstado })
+            .in('id', trabajoAgrupado.ids);
 
       if (error) throw error;
 
@@ -363,7 +398,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       alert(`✅ Estado cambiado a ${nuevoEstado}`);
     } catch (error) {
       console.error('Error cambiando estado:', error);
-      alert('❌ Error al cambiar el estado');
+      alert('❌ ' + mensajeDeError(error, 'Error al cambiar el estado'));
     } finally {
       setCargando(false);
     }
@@ -374,10 +409,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
 
     try {
       setCargando(true);
-      const { error } = await supabase
-        .from('trabajos')
-        .delete()
-        .in('id', trabajoAgrupado.ids);
+      const { error } = esLaboratorista
+        ? await supabase.rpc('eliminar_trabajos', { p_ids: trabajoAgrupado.ids })
+        : await supabase
+            .from('trabajos')
+            .delete()
+            .in('id', trabajoAgrupado.ids);
 
       if (error) throw error;
 
@@ -385,7 +422,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       alert('✅ Trabajo eliminado');
     } catch (error) {
       console.error('Error eliminando trabajo:', error);
-      alert('❌ Error al eliminar');
+      alert('❌ ' + mensajeDeError(error, 'Error al eliminar'));
     } finally {
       setCargando(false);
     }
@@ -407,10 +444,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     try {
       setCargando(true);
       const ids = trabajosPendientes.flatMap(t => t.ids);
-      const { error } = await supabase
-        .from('trabajos')
-        .update({ estado: 'terminado' })
-        .in('id', ids);
+      const { error } = esLaboratorista
+        ? await supabase.rpc('cambiar_estado_trabajos', { p_ids: ids, p_estado: 'terminado' })
+        : await supabase
+            .from('trabajos')
+            .update({ estado: 'terminado' })
+            .in('id', ids);
 
       if (error) throw error;
 
@@ -420,7 +459,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       alert('✅ Todos los trabajos marcados como terminados');
     } catch (error) {
       console.error('Error finalizando trabajos:', error);
-      alert('❌ Error al finalizar trabajos');
+      alert('❌ ' + mensajeDeError(error, 'Error al finalizar trabajos'));
     } finally {
       setCargando(false);
     }
@@ -477,10 +516,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
 
     try {
       setCargando(true);
-      const { error } = await supabase
-        .from('trabajos')
-        .update({ notas: nuevaNota })
-        .eq('id', trabajoConNotas.id);
+      const { error } = esLaboratorista
+        ? await supabase.rpc('guardar_nota_trabajo', { p_id: trabajoConNotas.id, p_nota: nuevaNota })
+        : await supabase
+            .from('trabajos')
+            .update({ notas: nuevaNota })
+            .eq('id', trabajoConNotas.id);
 
       if (error) throw error;
 
@@ -491,7 +532,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       alert('✅ Notas guardadas correctamente');
     } catch (error) {
       console.error('Error guardando nota:', error);
-      alert('❌ Error al guardar nota');
+      alert('❌ ' + mensajeDeError(error, 'Error al guardar nota'));
     } finally {
       setCargando(false);
     }
@@ -524,6 +565,35 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     const nuevoTotal = serviciosEditando.reduce((sum, s) => sum + s.precio, 0);
     try {
       setCargando(true);
+
+      // Laboratorista: la base de datos recalcula los precios (conserva los de las
+      // prestaciones que ya estaban y usa el catálogo para las nuevas)
+      if (esLaboratorista) {
+        if (serviciosEditando.length === 0) {
+          alert('El trabajo debe tener al menos una prestación. Si ya no corresponde, elimínalo.');
+          return;
+        }
+        const { error } = await supabase.rpc('editar_servicios_trabajo', {
+          p_ids: trabajoEditando.ids,
+          p_servicios: serviciosEditando.map(s => ({
+            servicio_id: s.servicio_id,
+            cantidad: s.cantidad,
+            nombre: s.nombre,
+            pieza_dental: s.pieza_dental || '',
+            nota_especial: s.nota_especial || ''
+          }))
+        });
+        if (error) throw error;
+        const primerId = trabajoEditando.ids[0];
+        const otrosIds = trabajoEditando.ids.slice(1);
+        setTrabajos(prev => prev
+          .filter(t => !otrosIds.includes(t.id))
+          .map(t => t.id === primerId ? { ...t, servicios: serviciosEditando.map(s => ({ ...s, precio: 0 })) } : t));
+        setModalEdicionAbierto(false);
+        alert('✅ Trabajo actualizado correctamente');
+        return;
+      }
+
       const primerId = trabajoEditando.ids[0];
       const otrosIds = trabajoEditando.ids.slice(1);
 
@@ -553,7 +623,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       alert('✅ Trabajo actualizado correctamente');
     } catch (error) {
       console.error('Error actualizando trabajo:', error);
-      alert('❌ Error al actualizar el trabajo');
+      alert('❌ ' + mensajeDeError(error, 'Error al actualizar el trabajo'));
     } finally {
       setCargando(false);
     }
@@ -575,12 +645,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           <td>${servicioInfo?.nombre || servicio.nombre || 'Servicio'}</td>
           <td>${servicio.cantidad}</td>
           <td>${servicio.pieza_dental || '-'}</td>
-          <td class="right">$${(servicio.precio / servicio.cantidad).toLocaleString()}</td>
-          <td class="right">$${servicio.precio.toLocaleString()}</td>
+          ${esLaboratorista ? '' : `<td class="right">$${(servicio.precio / servicio.cantidad).toLocaleString()}</td>
+          <td class="right">$${servicio.precio.toLocaleString()}</td>`}
           <td>${servicio.nota_especial || '-'}</td>
         </tr>
       `;
-    }).join('') || '<tr><td colspan="7" class="text-center">No hay servicios</td></tr>';
+    }).join('') || `<tr><td colspan="${esLaboratorista ? 5 : 7}" class="text-center">No hay servicios</td></tr>`;
 
     // Secciones de la orden (si existe)
     let seccionesHTML = '';
@@ -646,7 +716,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           <h4>Finalización</h4>
           <p><span class="label">Yeso:</span> ${orden.tipo_yeso || '-'}</p>
           <p><span class="label">Fecha entrega:</span> ${orden.fecha_entrega ? new Date(orden.fecha_entrega).toLocaleDateString() : '-'}</p>
-          <p><span class="label">Costo final:</span> $${orden.costo_final?.toLocaleString() || trabajo.precio_total.toLocaleString()}</p>
+          ${esLaboratorista ? '' : `<p><span class="label">Costo final:</span> $${orden.costo_final?.toLocaleString() || trabajo.precio_total.toLocaleString()}</p>`}
           <p><span class="label">Firma:</span> ${orden.firma || '-'}</p>
         </div>
       `;
@@ -821,8 +891,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
               <th>Servicio</th>
               <th>Cant.</th>
               <th>Pieza</th>
-              <th>P. Unit.</th>
-              <th>Subtotal</th>
+              ${esLaboratorista ? '' : '<th>P. Unit.</th><th>Subtotal</th>'}
               <th>Notas</th>
             </tr>
           </thead>
@@ -831,9 +900,9 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           </tbody>
         </table>
 
-        <div class="total">
+        ${esLaboratorista ? '' : `<div class="total">
           TOTAL: $${trabajo.precio_total.toLocaleString()}
-        </div>
+        </div>`}
 
         ${seccionesHTML}
 
@@ -1207,14 +1276,14 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         cerrandoSesion={cerrandoSesion}
         showBackButton={true}
         onBack={handleVolver}
-        title="Gestión de Trabajos"
+        title={esLaboratorista ? 'Mis Trabajos' : 'Gestión de Trabajos'}
         showTitle={true}
       />
 
       <div style={styles.mainContent}>
         <div style={styles.header}>
           <div>
-            <h1 style={styles.title}>🔧 Gestión de Trabajos</h1>
+            <h1 style={styles.title}>{esLaboratorista ? '🔧 Mis Trabajos' : '🔧 Gestión de Trabajos'}</h1>
             <p style={styles.subtitle}>Administra todos los trabajos dentales organizados por clínica y paciente</p>
           </div>
 
@@ -1303,10 +1372,10 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         <div style={styles.statsGrid}>
           {Object.entries({
             'Total Trabajos (agrupados)': estadisticas.total,
-            'Ingresos Totales': `$${estadisticas.ingresosTotales.toLocaleString()}`,
+            ...(esLaboratorista ? {} : { 'Ingresos Totales': `$${estadisticas.ingresosTotales.toLocaleString()}` }),
             'En Proceso': estadisticas.pendientes + estadisticas.produccion,
             'Finalizados': estadisticas.terminados + estadisticas.entregados
-          }).map(([label, value]) => (
+          } as Record<string, string | number>).map(([label, value]) => (
             <div
               key={label}
               style={styles.statCard}
@@ -1415,17 +1484,19 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                               )}
                             </div>
                           </div>
-                          <div style={{ ...styles.trabajoColumn, flex: '0.8' }}>
-                            <div style={styles.trabajoLabel}>Precio</div>
-                            <div style={{ ...styles.trabajoValue, color: '#10b981', fontWeight: '600' }}>
-                              ${trabajo.precio_total.toLocaleString()}
-                              {trabajo.ids.length > 1 && (
-                                <span style={{ fontSize: '0.7rem', color: '#f59e0b', marginLeft: '0.25rem' }}>
-                                  ({trabajo.ids.length})
-                                </span>
-                              )}
+                          {!esLaboratorista && (
+                            <div style={{ ...styles.trabajoColumn, flex: '0.8' }}>
+                              <div style={styles.trabajoLabel}>Precio</div>
+                              <div style={{ ...styles.trabajoValue, color: '#10b981', fontWeight: '600' }}>
+                                ${trabajo.precio_total.toLocaleString()}
+                                {trabajo.ids.length > 1 && (
+                                  <span style={{ fontSize: '0.7rem', color: '#f59e0b', marginLeft: '0.25rem' }}>
+                                    ({trabajo.ids.length})
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          )}
                           <div style={{ ...styles.trabajoColumn, flex: '1.2' }}>
                             <select
                               style={styles.estadoDropdown}
@@ -1435,7 +1506,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                               <option value="pendiente">⏳ Pendiente</option>
                               <option value="produccion">🔧 Producción</option>
                               <option value="terminado">✅ Terminado</option>
-                              <option value="entregado">📦 Entregado</option>
+                              <option value="entregado" disabled={esLaboratorista && !puedeDespachar && trabajo.estado !== 'entregado'}>📦 Entregado</option>
                             </select>
                           </div>
                           <div style={styles.actionButtons}>
@@ -1530,7 +1601,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                           Cantidad: {serv.cantidad} {serv.pieza_dental && `| Pieza: ${serv.pieza_dental}`}
                           {serv.nota_especial && ` | Nota: ${serv.nota_especial}`}
                         </div>
-                        <div style={{ fontWeight: '600', color: '#10b981' }}>${serv.precio.toLocaleString()}</div>
+                        {!esLaboratorista && <div style={{ fontWeight: '600', color: '#10b981' }}>${serv.precio.toLocaleString()}</div>}
                       </div>
                       <button
                         onClick={() => eliminarServicioEditando(index)}
@@ -1582,7 +1653,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                       marginBottom: '0.25rem'
                     }}
                   >
-                    <strong>{serv.nombre}</strong> - ${serv.precio_base.toLocaleString()}
+                    <strong>{serv.nombre}</strong>{!esLaboratorista && ` - $${serv.precio_base.toLocaleString()}`}
                   </div>
                 ))}
             </div>

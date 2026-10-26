@@ -251,13 +251,13 @@ const App: React.FC = () => {
       />
 
       {/* Módulos protegidos existentes */}
-      <Route path="/crear-trabajo" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><CrearTrabajo onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
+      <Route path="/crear-trabajo" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><CrearTrabajo onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/clinicas" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><GestionClinicas /></ProtectedRoute>} />
       <Route path="/dentistas" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><GestionDentistas /></ProtectedRoute>} />
       <Route path="/laboratoristas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionLaboratoristas onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/control-pagos" element={<ProtectedRoute allowedRoles={['super_admin']}><ControlPagosManual /></ProtectedRoute>} />
       <Route path="/servicios" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionServicios /></ProtectedRoute>} />
-      <Route path="/trabajos" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionTrabajos /></ProtectedRoute>} />
+      <Route path="/trabajos" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><GestionTrabajos /></ProtectedRoute>} />
       <Route path="/precios" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><GestionPrecios /></ProtectedRoute>} />
       <Route path="/configuracion" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/reportes" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><Reportes onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
