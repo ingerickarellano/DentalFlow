@@ -1,26 +1,65 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
+// ============================================
+// MEMBRESÍA DEL LABORATORIO
+// El plan pertenece al laboratorio (no a la persona) y se lee con la función
+// mi_membresia() de la base. Planes: 'gratuito' | 'profesional' | 'enterprise'.
+// Plan vencido o laboratorio suspendido = solo lectura (la base no deja crear
+// registros nuevos, pero sí avanzar los trabajos en curso).
+// ============================================
+
+export type PlanId = 'gratuito' | 'profesional' | 'enterprise';
+
 export interface MembresiaInfo {
-  plan: string;
+  plan: PlanId;
+  planNombre: string;
+  planSolicitado: PlanId | null;
   fecha_expiracion: string | null;
   suscripcion_activa: boolean;
   dias_restantes: number;
   estaActiva: boolean;
+  soloLectura: boolean;
+  suspendido: boolean;
   esGratuita: boolean;
+  limiteClinicas: number | null; // null = ilimitado
+  clinicas: number;
+  laboratorioId: string | null;
+  laboratorio: string;
+  rol: string;
   cargando: boolean;
 }
 
+export const NOMBRES_PLAN: Record<PlanId, string> = {
+  gratuito: 'Prueba Gratuita',
+  profesional: 'Profesional',
+  enterprise: 'Enterprise'
+};
+
+export const nombrePlan = (plan: string | null | undefined): string =>
+  NOMBRES_PLAN[(plan || 'gratuito') as PlanId] || plan || 'Prueba Gratuita';
+
+const ESTADO_INICIAL: MembresiaInfo = {
+  plan: 'gratuito',
+  planNombre: NOMBRES_PLAN.gratuito,
+  planSolicitado: null,
+  fecha_expiracion: null,
+  suscripcion_activa: false,
+  dias_restantes: 0,
+  estaActiva: false,
+  soloLectura: false,
+  suspendido: false,
+  esGratuita: true,
+  limiteClinicas: 3,
+  clinicas: 0,
+  laboratorioId: null,
+  laboratorio: '',
+  rol: '',
+  cargando: true
+};
+
 export const useMembresia = (userId: string | undefined) => {
-  const [membresia, setMembresia] = useState<MembresiaInfo>({
-    plan: 'gratuita',
-    fecha_expiracion: null,
-    suscripcion_activa: false,
-    dias_restantes: 0,
-    estaActiva: false,
-    esGratuita: true,
-    cargando: true
-  });
+  const [membresia, setMembresia] = useState<MembresiaInfo>(ESTADO_INICIAL);
 
   useEffect(() => {
     if (!userId) {
@@ -28,64 +67,49 @@ export const useMembresia = (userId: string | undefined) => {
       return;
     }
 
+    let activo = true;
+
     const cargarMembresia = async () => {
       try {
-        const { data, error } = await supabase
-          .from('perfiles_usuarios')
-          .select('plan, fecha_expiracion, suscripcion_activa')
-          .eq('id', userId)
-          .maybeSingle();
-
+        const { data, error } = await supabase.rpc('mi_membresia');
         if (error) throw error;
+        if (!activo) return;
 
-        if (data) {
-          // Calcular días restantes
-          let dias = 0;
-          if (data.fecha_expiracion) {
-            const hoy = new Date();
-            hoy.setHours(0, 0, 0, 0);
-            const expiracion = new Date(data.fecha_expiracion);
-            expiracion.setHours(0, 0, 0, 0);
-            dias = Math.ceil((expiracion.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-          }
+        const fila = Array.isArray(data) ? data[0] : data;
 
-          const suscripcionActiva = data.suscripcion_activa || false;
-          const diasRestantes = dias > 0 ? dias : 0;
-          const estaActiva = suscripcionActiva && diasRestantes > 0;
-          const esGratuita = data.plan === 'gratuita';
-
-          setMembresia({
-            plan: data.plan || 'gratuita',
-            fecha_expiracion: data.fecha_expiracion,
-            suscripcion_activa: suscripcionActiva,
-            dias_restantes: diasRestantes,
-            estaActiva,
-            esGratuita,
-            cargando: false
-          });
-        } else {
-          // No hay perfil -> asumimos prueba gratuita activa por 30 días
-          const hoy = new Date();
-          const expiracion = new Date();
-          expiracion.setDate(hoy.getDate() + 30);
-
-          setMembresia({
-            plan: 'gratuita',
-            fecha_expiracion: expiracion.toISOString().split('T')[0],
-            suscripcion_activa: true,
-            dias_restantes: 30,
-            estaActiva: true,
-            esGratuita: true,
-            cargando: false
-          });
+        if (!fila) {
+          // Sin laboratorio asociado (por ejemplo, super administrador de la plataforma)
+          setMembresia({ ...ESTADO_INICIAL, soloLectura: false, limiteClinicas: null, cargando: false });
+          return;
         }
+
+        const plan = (fila.plan || 'gratuito') as PlanId;
+        setMembresia({
+          plan,
+          planNombre: nombrePlan(plan),
+          planSolicitado: (fila.plan_solicitado || null) as PlanId | null,
+          fecha_expiracion: fila.fecha_vencimiento,
+          suscripcion_activa: !!fila.vigente,
+          dias_restantes: fila.dias_restantes ?? 0,
+          estaActiva: !!fila.vigente,
+          soloLectura: !!fila.solo_lectura,
+          suspendido: fila.estado === 'suspendido',
+          esGratuita: plan === 'gratuito',
+          limiteClinicas: fila.limite_clinicas ?? null,
+          clinicas: fila.clinicas ?? 0,
+          laboratorioId: fila.laboratorio_id,
+          laboratorio: fila.laboratorio || '',
+          rol: fila.rol || '',
+          cargando: false
+        });
       } catch (error) {
         console.error('Error en useMembresia:', error);
-        setMembresia(prev => ({ ...prev, cargando: false }));
+        if (activo) setMembresia(prev => ({ ...prev, cargando: false }));
       }
     };
 
     cargarMembresia();
+    return () => { activo = false; };
   }, [userId]);
 
   return membresia;

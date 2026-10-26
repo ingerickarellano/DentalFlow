@@ -493,7 +493,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         if (error) throw error;
       }
       alert(idioma === 'es' ? 'Trabajo guardado exitosamente' : 'Work saved successfully');
-      limpiarTodo();
+      reiniciarFormulario();
     } catch (error: any) {
       console.error('Error finalizar:', error);
       alert(idioma === 'es' ? `Error: ${error.message}` : `Error: ${error.message}`);
@@ -534,30 +534,36 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     setFechaTrabajo(`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`);
   };
 
+  // Botón manual "Limpiar trabajo": pide confirmación antes de borrar.
   const limpiarTodo = () => {
     if (window.confirm(idioma === 'es' ? '¿Limpiar todo?' : 'Clear all?')) {
-      setClinicaSeleccionada('');
-      setDentistaSeleccionado('');
-      setLaboratoristaSeleccionado('');
-      setNombrePaciente('');
-      setRutPaciente('');
-      setTrabajosAgregados([]);
-      setCantidades({});
-      setPiezasDentales({});
-      setNotasServicios({});
-      setTerminoBusqueda('');
-      setModoDetallado(false);
-      setConfigDetallada({
-        tooth: '', materialConfig: 'Default', baseMaterial: 'Solar Laser / 30 Pinz',
-        implantBased: false, customAbstinent: '', additionalScans: false,
-        minimalThickness: 0.5, gapWidthCement: 0.1, orsStockAbstinent: false,
-        selectedMaterials: [], materialType: 'Zirconia', toothColor: 'A2'
-      });
-      setShowFloatingCounter(false);
-      setMostrarHistorial(false);
-      const hoy = new Date();
-      setFechaTrabajo(`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`);
+      reiniciarFormulario();
     }
+  };
+
+  // Reinicia el formulario sin preguntar (se usa después de guardar con éxito).
+  const reiniciarFormulario = () => {
+    setClinicaSeleccionada('');
+    setDentistaSeleccionado('');
+    setLaboratoristaSeleccionado('');
+    setNombrePaciente('');
+    setRutPaciente('');
+    setTrabajosAgregados([]);
+    setCantidades({});
+    setPiezasDentales({});
+    setNotasServicios({});
+    setTerminoBusqueda('');
+    setModoDetallado(false);
+    setConfigDetallada({
+      tooth: '', materialConfig: 'Default', baseMaterial: 'Solar Laser / 30 Pinz',
+      implantBased: false, customAbstinent: '', additionalScans: false,
+      minimalThickness: 0.5, gapWidthCement: 0.1, orsStockAbstinent: false,
+      selectedMaterials: [], materialType: 'Zirconia', toothColor: 'A2'
+    });
+    setShowFloatingCounter(false);
+    setMostrarHistorial(false);
+    const hoy = new Date();
+    setFechaTrabajo(`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`);
   };
 
   const handleNombrePacienteChange = (nuevoNombre: string) => {

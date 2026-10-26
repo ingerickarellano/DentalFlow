@@ -9,7 +9,9 @@ interface RegistroProps {
 const Registro: React.FC<RegistroProps> = ({ onBack }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const planSeleccionado = searchParams.get('plan') || 'gratuita';
+  // Acepta los nombres antiguos de plan que aún puedan venir en enlaces
+  const planUrl = (searchParams.get('plan') || 'gratuito').toLowerCase();
+  const planSeleccionado = planUrl === 'gratuita' ? 'gratuito' : planUrl === 'empresarial' ? 'enterprise' : planUrl;
 
   const [paso, setPaso] = useState(1);
   const [cargando, setCargando] = useState(false);
@@ -29,12 +31,12 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
   // Planes de suscripción actualizados
   const planesMembresia = [
     {
-      id: 'gratuita',
+      id: 'gratuito',
       nombre: 'Prueba Gratuita',
       precio: 0,
       duracion: '30 días',
       caracteristicas: [
-        'Hasta 5 clínicas',
+        'Hasta 3 clínicas',
         'Hasta 10 trabajos mensuales',
         'Soporte básico por email',
         'Acceso a reportes básicos'
@@ -54,8 +56,8 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
       ]
     },
     {
-      id: 'empresarial',
-      nombre: 'Plan Empresarial',
+      id: 'enterprise',
+      nombre: 'Plan Enterprise',
       precio: 99,
       duracion: 'mes',
       caracteristicas: [
@@ -249,7 +251,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
             laboratorio: formData.laboratorio.trim(),
             telefono: formData.telefono.trim(),
             plan: plan.id,
-            rol: 'cliente'
+            rol: 'admin'
           },
           emailRedirectTo: `${window.location.origin}/login`
         }
@@ -260,31 +262,8 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
       if (data.user) {
         console.log('✅ Usuario creado con UUID:', data.user.id);
         
-        // Crear perfil en la tabla perfiles_usuarios
-        const { error: profileError } = await supabase
-          .from('perfiles_usuarios')
-          .insert({
-            id: data.user.id,
-            email: formData.email.trim(),
-            nombre: formData.nombre.trim(),
-            laboratorio: formData.laboratorio.trim(),
-            telefono: formData.telefono || null,
-            rol: 'cliente',
-            plan: plan.id,
-            suscripcion_activa: plan.id === 'gratuita', // Gratis está activa
-            fecha_expiracion: plan.id === 'gratuita' 
-              ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 días
-              : null,
-            fecha_activacion: plan.id === 'gratuita' ? new Date().toISOString() : null,
-            creado_en: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-
-        if (profileError) {
-          console.error('Error creando perfil:', profileError);
-          // No lanzamos error porque el usuario se creó en auth
-        }
+        // El laboratorio (prueba Gratuita de 30 días) y el perfil de administrador
+        // los crea la base de datos automáticamente al registrarse.
 
         setPaso(3);
       }
@@ -339,7 +318,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
                     📧 Recibirás un email cuando tu cuenta esté activa.
                   </p>
                 </div>
-                <p>Puedes iniciar sesión, pero tu acceso estará limitado hasta la activación.</p>
+                <p>Mientras confirmamos tu pago, tu cuenta parte con la <strong>prueba gratuita de 30 días</strong> (hasta 3 clínicas).</p>
               </>
             ) : (
               <>

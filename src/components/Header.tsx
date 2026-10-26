@@ -1,6 +1,7 @@
 // src/components/Header.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useMediaQuery, BREAKPOINTS } from '../hooks/useMediaQuery';
 
 interface HeaderProps {
   user?: {
@@ -32,6 +33,8 @@ const Header: React.FC<HeaderProps> = ({
   showTitle = false
 }) => {
   const navigate = useNavigate();
+  const esMovil = useMediaQuery(BREAKPOINTS.movil);
+  const esTablet = useMediaQuery(BREAKPOINTS.tablet);
   const [visible, setVisible] = useState(true);
   const lastScrollY = useRef(0);
 
@@ -80,7 +83,8 @@ const Header: React.FC<HeaderProps> = ({
 
   const styles = {
     header: {
-      padding: '0.75rem 2rem',
+      padding: esMovil ? '0.5rem 0.75rem' : '0.75rem 2rem',
+      gap: esMovil ? '0.5rem' : '1rem',
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
@@ -97,7 +101,8 @@ const Header: React.FC<HeaderProps> = ({
     leftSection: {
       display: 'flex',
       alignItems: 'center',
-      gap: '1.5rem'
+      gap: esMovil ? '0.5rem' : '1.5rem',
+      minWidth: 0
     },
     backButton: {
       backgroundColor: 'transparent',
@@ -123,7 +128,7 @@ const Header: React.FC<HeaderProps> = ({
       textDecoration: 'none'
     },
     logoImage: {
-      height: '40px',
+      height: esMovil ? '32px' : '40px',
       width: 'auto',
       objectFit: 'contain' as const,
       transition: 'transform 0.2s'
@@ -143,12 +148,17 @@ const Header: React.FC<HeaderProps> = ({
       color: '#374151',
       margin: 0,
       paddingLeft: '1rem',
-      borderLeft: '2px solid #e5e7eb'
+      borderLeft: '2px solid #e5e7eb',
+      whiteSpace: 'nowrap' as const,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      minWidth: 0
     },
     userSection: {
       display: 'flex',
       alignItems: 'center',
-      gap: '1rem'
+      gap: esMovil ? '0.5rem' : '1rem',
+      flexShrink: 0
     },
     userInfo: {
       textAlign: 'right' as const,
@@ -277,13 +287,13 @@ const Header: React.FC<HeaderProps> = ({
           />
         </div>
 
-        {showTitle && title && (
+        {showTitle && title && !esTablet && (
           <h1 style={styles.pageTitle}>{title}</h1>
         )}
       </div>
 
       <div style={styles.userSection}>
-        {user && (
+        {user && !esMovil && (
           <div style={styles.userInfo}>
             <p style={styles.userName}>
               {user.nombre}

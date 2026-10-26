@@ -125,7 +125,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       }
 
       const { data: userData } = await supabase
-        .from('perfiles')
+        .from('perfiles_usuarios')
         .select('*')
         .eq('id', user.id)
         .single();

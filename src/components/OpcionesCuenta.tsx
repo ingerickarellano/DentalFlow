@@ -77,7 +77,7 @@ const OpcionesCuenta: React.FC<OpcionesCuentaProps> = ({ onBack }) => {
 
       // Cargar información del usuario
       const { data: userData } = await supabase
-        .from('perfiles')
+        .from('perfiles_usuarios')
         .select('*')
         .eq('id', user.id)
         .single();

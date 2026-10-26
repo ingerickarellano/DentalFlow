@@ -39,7 +39,7 @@ interface User {
 // ============================================
 const ProtectedRoute = ({
   children,
-  allowedRoles = ['admin', 'cliente', 'laboratorista'],
+  allowedRoles = ['super_admin', 'admin', 'cliente', 'laboratorista'],
 }: {
   children: React.ReactNode;
   allowedRoles?: string[];
@@ -66,7 +66,7 @@ const ProtectedRoute = ({
         id: user.id,
         email: user.email!,
         nombre: user.user_metadata?.nombre || user.email!.split('@')[0],
-        rol: perfil?.rol || user.user_metadata?.rol || 'cliente',
+        rol: perfil?.rol || user.user_metadata?.rol || 'admin',
         laboratorio: perfil?.laboratorio || user.user_metadata?.laboratorio,
         telefono: perfil?.telefono || user.user_metadata?.telefono,
       };
@@ -125,7 +125,7 @@ const App: React.FC = () => {
             id: session.user.id,
             email: session.user.email!,
             nombre: session.user.user_metadata?.nombre || session.user.email!.split('@')[0],
-            rol: perfil?.rol || session.user.user_metadata?.rol || 'cliente',
+            rol: perfil?.rol || session.user.user_metadata?.rol || 'admin',
             laboratorio: perfil?.laboratorio || session.user.user_metadata?.laboratorio,
             telefono: perfil?.telefono || session.user.user_metadata?.telefono,
           };
@@ -168,7 +168,7 @@ const App: React.FC = () => {
             id: session.user.id,
             email: session.user.email!,
             nombre: session.user.user_metadata?.nombre || session.user.email!.split('@')[0],
-            rol: perfil?.rol || session.user.user_metadata?.rol || 'cliente',
+            rol: perfil?.rol || session.user.user_metadata?.rol || 'admin',
             laboratorio: perfil?.laboratorio || session.user.user_metadata?.laboratorio,
             telefono: perfil?.telefono || session.user.user_metadata?.telefono,
           };

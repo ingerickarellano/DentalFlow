@@ -60,6 +60,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [cargandoBusqueda, setCargandoBusqueda] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
+  // Nombre del laboratorio: el de Configuración (el que sale en los reportes);
+  // si no existe, el ingresado al registrarse.
+  const [nombreLaboratorio, setNombreLaboratorio] = useState<string>(user.laboratorio || '');
+
+  useEffect(() => {
+    let activo = true;
+    const cargarNombreLaboratorio = async () => {
+      const { data, error } = await supabase
+        .from('configuracion_laboratorio')
+        .select('nombre_laboratorio')
+        .eq('usuario_id', user.id)
+        .maybeSingle();
+      if (!activo) return;
+      if (error) {
+        console.error('Error cargando nombre del laboratorio:', error);
+        return;
+      }
+      if (data?.nombre_laboratorio?.trim()) {
+        setNombreLaboratorio(data.nombre_laboratorio.trim());
+      }
+    };
+    cargarNombreLaboratorio();
+    return () => { activo = false; };
+  }, [user.id]);
+
   // ============================================
   // 1. CARGA DE ESTADÍSTICAS
   // ============================================
@@ -258,11 +283,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     }
   };
 
+  // Con el plan vencido el laboratorio entra en modo solo lectura: puede ver
+  // todo y avanzar trabajos en curso; la base de datos impide crear registros nuevos.
   const handleResultadoClick = (tipo: string, item: any) => {
-    if (!membresia.estaActiva && user.rol !== 'admin') {
-      alert('Tu membresía no está activa. Renueva para acceder a esta sección.');
-      return;
-    }
     if (tipo === 'paciente' || tipo === 'trabajo') {
       navigate('/trabajos');
     } else if (tipo === 'clinica') {
@@ -271,10 +294,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   };
 
   const handleModuleClick = (path: string, moduleId: string) => {
-    if (user.rol !== 'admin' && !membresia.estaActiva && moduleId !== 'mi-membresia') {
-      alert('Tu membresía no está activa. Renueva para acceder a este módulo.');
-      return;
-    }
     navigate(path);
   };
 
@@ -356,6 +375,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       fontWeight: '600',
       marginLeft: '0.75rem',
       letterSpacing: '0.5px'
+    },
+    soloLecturaBanner: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
+      flexWrap: 'wrap' as const,
+      marginTop: '16px',
+      padding: '14px 16px',
+      backgroundColor: '#fef2f2',
+      border: '1px solid #fecaca',
+      borderRadius: '10px',
+      color: '#7f1d1d',
+      fontSize: '14px',
+      lineHeight: 1.5
+    },
+    soloLecturaTexto: {
+      flex: '1 1 280px'
+    },
+    soloLecturaBoton: {
+      padding: '8px 16px',
+      backgroundColor: '#dc2626',
+      color: 'white',
+      border: 'none',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      fontWeight: 600,
+      whiteSpace: 'nowrap'
     },
     subscriptionCard: {
       display: 'grid',
@@ -658,14 +705,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             <div style={styles.subscriptionItem}>
               <div style={styles.subscriptionLabel}>Plan Actual</div>
               <div style={styles.subscriptionValue}>
-                {membresia.cargando ? 'Cargando...' : (() => {
-                  switch (membresia.plan) {
-                    case 'gratuita': return 'Prueba Gratuita';
-                    case 'profesional': return 'Profesional';
-                    case 'empresarial': return 'Empresarial';
-                    default: return membresia.plan;
-                  }
-                })()}
+                {membresia.cargando ? 'Cargando...' : membresia.planNombre}
                 {!membresia.cargando && (
                   <span style={{
                     ...styles.planBadge,
@@ -698,13 +738,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               <div style={styles.subscriptionValue}>{user.email}</div>
             </div>
 
-            {user.telefono && (
-              <div style={styles.subscriptionItem}>
-                <div style={styles.subscriptionLabel}>Teléfono</div>
-                <div style={styles.subscriptionValue}>📞 {user.telefono}</div>
-              </div>
-            )}
+            <div style={styles.subscriptionItem}>
+              <div style={styles.subscriptionLabel}>Laboratorio</div>
+              <div style={styles.subscriptionValue}>🏢 {nombreLaboratorio || 'Sin nombre configurado'}</div>
+            </div>
           </div>
+
+          {!membresia.cargando && membresia.soloLectura && (
+            <div style={styles.soloLecturaBanner} role="alert">
+              <div style={styles.soloLecturaTexto}>
+                <strong>
+                  {membresia.suspendido ? '⛔ Tu laboratorio está suspendido.' : '⚠️ Tu plan está vencido.'}
+                </strong>{' '}
+                Puedes ver tu información y avanzar o entregar los trabajos en curso,
+                pero no crear clínicas, dentistas, servicios ni trabajos nuevos.
+              </div>
+              <button style={styles.soloLecturaBoton} onClick={() => navigate('/mi-membresia')}>
+                Regularizar pago
+              </button>
+            </div>
+          )}
 
           {/* Search */}
           {mostrarBusquedaYEstadisticas && (
