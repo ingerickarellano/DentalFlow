@@ -172,8 +172,8 @@ const OrdenFormulario: React.FC = () => {
       setConfigLaboratorio(config);
 
       const [clinicasRes, dentistasRes, laboratoristasRes] = await Promise.all([
-        supabase.from('clinicas').select('id,nombre').eq('usuario_id', user.id),
-        supabase.from('dentistas').select('id,nombre,clinica_id').eq('usuario_id', user.id),
+        supabase.from('clinicas').select('id,nombre'),
+        supabase.from('dentistas').select('id,nombre,clinica_id'),
         supabase.from('laboratoristas').select('id,nombre').eq('usuario_id', user.id),
       ]);
       setClinicas(clinicasRes.data || []);

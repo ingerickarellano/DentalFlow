@@ -159,7 +159,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
           `)
           .eq('usuario_id', user.id)
           .order('fecha_recibido', { ascending: false }),
-        supabase.from('clinicas').select('*').eq('usuario_id', user.id),
+        supabase.from('clinicas').select('*'),
         supabase.from('configuracion_laboratorio').select('*').eq('usuario_id', user.id).single()
       ]);
 

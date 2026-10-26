@@ -91,65 +91,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const cargarEstadisticas = useCallback(async () => {
     try {
       setCargandoEstadisticas(true);
-      const esAdmin = user.rol === 'admin';
+      // La base de datos ya devuelve solo lo del laboratorio de quien consulta.
+      // El laboratorista lee los trabajos desde la vista sin precios (solo los suyos).
+      const tablaTrabajos = user.rol === 'laboratorista' ? 'trabajos_vista' : 'trabajos';
 
-      if (esAdmin) {
-        const [
-          { count: clinicasCount },
-          { count: dentistasCount },
-          { count: trabajosCount },
-          { count: trabajosPendientes },
-          { count: trabajosProduccion },
-          { count: trabajosTerminados }
-        ] = await Promise.all([
-          supabase.from('clinicas').select('*', { count: 'exact', head: true }),
-          supabase.from('dentistas').select('*', { count: 'exact', head: true }),
-          supabase.from('trabajos').select('*', { count: 'exact', head: true }),
-          supabase.from('trabajos').select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
-          supabase.from('trabajos').select('*', { count: 'exact', head: true }).eq('estado', 'produccion'),
-          supabase.from('trabajos').select('*', { count: 'exact', head: true }).eq('estado', 'terminado')
-        ]);
+      const [
+        { count: clinicasCount },
+        { count: dentistasCount },
+        { count: trabajosCount },
+        { count: trabajosPendientes },
+        { count: trabajosProduccion },
+        { count: trabajosTerminados }
+      ] = await Promise.all([
+        supabase.from('clinicas').select('*', { count: 'exact', head: true }),
+        supabase.from('dentistas').select('*', { count: 'exact', head: true }),
+        supabase.from(tablaTrabajos).select('*', { count: 'exact', head: true }),
+        supabase.from(tablaTrabajos).select('*', { count: 'exact', head: true }).eq('estado', 'pendiente'),
+        supabase.from(tablaTrabajos).select('*', { count: 'exact', head: true }).eq('estado', 'produccion'),
+        supabase.from(tablaTrabajos).select('*', { count: 'exact', head: true }).eq('estado', 'terminado')
+      ]);
 
-        setEstadisticas({
-          totalClinicas: clinicasCount || 0,
-          totalDentistas: dentistasCount || 0,
-          totalTrabajos: trabajosCount || 0,
-          trabajosPendientes: trabajosPendientes || 0,
-          trabajosProduccion: trabajosProduccion || 0,
-          trabajosTerminados: trabajosTerminados || 0
-        });
-      } else {
-        const [
-          { count: clinicasCount },
-          { count: dentistasCount },
-          { count: trabajosCount },
-          { count: trabajosPendientes },
-          { count: trabajosProduccion },
-          { count: trabajosTerminados }
-        ] = await Promise.all([
-          supabase.from('clinicas').select('*', { count: 'exact', head: true }).eq('usuario_id', user.id),
-          supabase.from('dentistas').select('*', { count: 'exact', head: true }).eq('usuario_id', user.id),
-          supabase.from('trabajos').select('*', { count: 'exact', head: true }).eq('usuario_id', user.id),
-          supabase.from('trabajos').select('*', { count: 'exact', head: true }).eq('usuario_id', user.id).eq('estado', 'pendiente'),
-          supabase.from('trabajos').select('*', { count: 'exact', head: true }).eq('usuario_id', user.id).eq('estado', 'produccion'),
-          supabase.from('trabajos').select('*', { count: 'exact', head: true }).eq('usuario_id', user.id).eq('estado', 'terminado')
-        ]);
-
-        setEstadisticas({
-          totalClinicas: clinicasCount || 0,
-          totalDentistas: dentistasCount || 0,
-          totalTrabajos: trabajosCount || 0,
-          trabajosPendientes: trabajosPendientes || 0,
-          trabajosProduccion: trabajosProduccion || 0,
-          trabajosTerminados: trabajosTerminados || 0
-        });
-      }
+      setEstadisticas({
+        totalClinicas: clinicasCount || 0,
+        totalDentistas: dentistasCount || 0,
+        totalTrabajos: trabajosCount || 0,
+        trabajosPendientes: trabajosPendientes || 0,
+        trabajosProduccion: trabajosProduccion || 0,
+        trabajosTerminados: trabajosTerminados || 0
+      });
     } catch (error) {
       console.error('Error cargando estadísticas:', error);
     } finally {
       setCargandoEstadisticas(false);
     }
-  }, [user.id, user.rol]);
+  }, [user.rol]);
 
   useEffect(() => {
     cargarEstadisticas();
@@ -171,36 +146,41 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     const terminoLower = termino.toLowerCase();
 
     try {
-      const esAdmin = user.rol === 'admin';
+      const esLaboratorista = user.rol === 'laboratorista';
 
-      const queryClinicas = supabase
+      const { data: clinicasData } = await supabase
         .from('clinicas')
         .select('*')
         .or(`nombre.ilike.%${terminoLower}%,email.ilike.%${terminoLower}%,telefono.ilike.%${terminoLower}%`)
         .limit(10);
 
-      if (!esAdmin) {
-        queryClinicas.eq('usuario_id', user.id);
+      let trabajosData: any[] | null = null;
+      if (esLaboratorista) {
+        // Vista sin precios: trae los nombres de clínica, dentista y laboratorista ya resueltos
+        const { data } = await supabase
+          .from('trabajos_vista')
+          .select('*')
+          .or(`paciente.ilike.%${terminoLower}%,estado.ilike.%${terminoLower}%`)
+          .limit(20);
+        trabajosData = (data || []).map((t: any) => ({
+          ...t,
+          clinicas: { nombre: t.clinica_nombre },
+          dentistas: { nombre: t.dentista_nombre },
+          laboratoristas: { nombre: t.laboratorista_nombre }
+        }));
+      } else {
+        const { data } = await supabase
+          .from('trabajos')
+          .select(`
+            *,
+            clinicas (nombre, direccion),
+            dentistas (nombre, especialidad),
+            laboratoristas (nombre)
+          `)
+          .or(`paciente.ilike.%${terminoLower}%,estado.ilike.%${terminoLower}%`)
+          .limit(20);
+        trabajosData = data;
       }
-
-      const { data: clinicasData } = await queryClinicas;
-
-      const queryTrabajos = supabase
-        .from('trabajos')
-        .select(`
-          *,
-          clinicas (nombre, direccion),
-          dentistas (nombre, especialidad),
-          laboratoristas (nombre)
-        `)
-        .or(`paciente.ilike.%${terminoLower}%,estado.ilike.%${terminoLower}%`)
-        .limit(20);
-
-      if (!esAdmin) {
-        queryTrabajos.eq('usuario_id', user.id);
-      }
-
-      const { data: trabajosData } = await queryTrabajos;
 
       const pacientesEncontrados = trabajosData?.filter(t => 
         t.paciente.toLowerCase().includes(terminoLower)
@@ -300,21 +280,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   // ============================================
   // 5. MÓDULOS (tipados con Module)
   // ============================================
-  const modulesAdmin: Module[] = [
-    { id: 'clinicas', icon: '🏥', title: 'Clínicas y Dentistas', description: 'Gestiona todas las clínicas dentales y odontólogos del sistema.', path: '/clinicas' },
-    { id: 'crear-trabajo', icon: '📋', title: 'Crear Lista de Trabajo', description: 'Crea nuevos trabajos seleccionando clínica, dentista y servicios.', path: '/crear-trabajo' },
-    { id: 'ordenes', icon: '🏍️', title: 'Órdenes de Trabajo', description: 'Gestiona órdenes detalladas con especificaciones técnicas y selector de dientes.', path: '/ordenes' },
-    { id: 'trabajos-proceso', icon: '🔧', title: 'Trabajos en Proceso', description: 'Control y seguimiento de todos los trabajos dentales en producción.', path: '/trabajos' },
-    { id: 'laboratoristas', icon: '👨‍🔧', title: 'Laboratoristas', description: 'Gestiona todos los técnicos y laboratoristas del sistema.', path: '/laboratoristas' },
-    { id: 'precios', icon: '💰', title: 'Lista de Precios', description: 'Configura precios base y personalizados por clínica/dentista.', path: '/precios' },
-    { id: 'mi-membresia', icon: '⏳', title: 'Mi Membresía', description: 'Consulta tu plan actual y días restantes.', path: '/mi-membresia' },
-    { id: 'reportes', icon: '📊', title: 'Reportes', description: 'Genera reportes de trabajos, ingresos y productividad.', path: '/reportes' },
-    { id: 'admin', icon: '👑', title: 'Panel de Administración', description: 'Gestiona usuarios, membresías y ve estadísticas del sistema.', path: '/admin' },
-    { id: 'opciones-cuenta', icon: '⚙️', title: 'Opciones del Sistema', description: 'Configura la información general del sistema y parámetros.', path: '/configuracion' },
-    { id: 'entregas', icon: '📦', title: 'Registro de Entregas', description: 'Escanea códigos QR para registrar entregas de trabajos.', path: '/entregas' },
-    { id: 'control-pagos', icon: '💳', title: 'Control de Pagos Manual', description: 'Registra y gestiona pagos de membresías de forma manual.', path: '/control-pagos' },
+  // Funciones de la plataforma: solo el super administrador (Camilo y Erick)
+  const modulesSuperAdmin: Module[] = [
+    { id: 'admin', icon: '👑', title: 'Panel de Administración', description: 'Gestiona laboratorios, membresías y estadísticas de la plataforma.', path: '/admin' },
+    { id: 'control-pagos', icon: '💳', title: 'Control de Pagos Manual', description: 'Revisa y aprueba los pagos de membresía de los laboratorios.', path: '/control-pagos' },
   ];
 
+  // Módulos de un laboratorio (administrador del laboratorio)
   const modulesCliente: Module[] = [
     { id: 'clinicas', icon: '🏥', title: 'Mis Clínicas y Dentistas', description: 'Gestiona tus clínicas dentales y odontólogos asociados.', path: '/clinicas' },
     { id: 'crear-trabajo', icon: '📋', title: 'Crear Lista de Trabajo', description: 'Crea nuevos trabajos seleccionando clínica, dentista y servicios.', path: '/crear-trabajo' },
@@ -328,7 +300,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     { id: 'mi-membresia', icon: '⏳', title: 'Mi Membresía', description: 'Consulta tu plan actual, días restantes y renueva tu suscripción.', path: '/mi-membresia' }
   ];
 
-  const modules = user.rol === 'admin' ? modulesAdmin : modulesCliente;
+  // Laboratorista: mismas herramientas de trabajo que el admin, sin precios ni administración.
+  // (Crear Trabajo y Mis Trabajos se habilitan en la entrega 1b-2; Órdenes y Entregas en la 1b-3.)
+  const modulesLaboratorista: Module[] = [
+    { id: 'clinicas', icon: '🏥', title: 'Clínicas y Dentistas', description: 'Clínicas y odontólogos del laboratorio.', path: '/clinicas' }
+  ];
+
+  const modules = user.rol === 'super_admin'
+    ? modulesSuperAdmin
+    : user.rol === 'laboratorista'
+      ? modulesLaboratorista
+      : modulesCliente;
 
   // ============================================
   // 6. ESTILOS (se mantienen igual)
@@ -406,7 +388,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     },
     subscriptionCard: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
       gap: '1.5rem',
       marginBottom: '2rem'
     },
@@ -430,7 +412,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
       color: '#1e293b',
       display: 'flex',
       alignItems: 'center',
-      gap: '0.5rem'
+      gap: '0.5rem',
+      flexWrap: 'wrap' as const,
+      minWidth: 0,
+      overflowWrap: 'anywhere' as const
     },
     planBadge: {
       padding: '0.25rem 0.75rem',
@@ -479,7 +464,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     },
     statsGrid: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))',
       gap: '1.5rem',
       marginBottom: '3rem'
     },
@@ -505,7 +490,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     },
     modulesGrid: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
       gap: '1.5rem',
       marginBottom: '3rem'
     },
@@ -616,7 +601,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
     },
     resultadoGrid: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
       gap: '1rem'
     },
     resultadoItem: {
@@ -673,8 +658,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   // 7. RENDERIZADO
   // ============================================
   const esAdmin = user.rol === 'admin';
-  const membresiaActiva = membresia.estaActiva;
-  const mostrarBusquedaYEstadisticas = esAdmin || membresiaActiva;
+  const esLaboratorista = user.rol === 'laboratorista';
+  const verPrecios = !esLaboratorista;
+  // Con el plan vencido se puede ver todo (solo lectura); la base impide crear.
+  const mostrarBusquedaYEstadisticas = true;
 
   return (
     <div style={styles.container}>
@@ -692,11 +679,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           <h1 style={styles.welcomeTitle}>
             ¡Bienvenido de nuevo, {user.nombre}!
             {esAdmin && <span style={styles.adminBadge}>ADMINISTRADOR</span>}
+            {esLaboratorista && <span style={{ ...styles.adminBadge, backgroundColor: '#0f766e' }}>LABORATORISTA</span>}
           </h1>
           <p style={styles.welcomeSubtitle}>
             {esAdmin
               ? 'Sistema de gestión completo - Modo Administrador'
-              : `Gestión completa de tu laboratorio dental ${user.laboratorio ? `- ${user.laboratorio}` : ''}`
+              : esLaboratorista
+                ? `Laboratorista de ${membresia.laboratorio || user.laboratorio || 'tu laboratorio'}`
+                : `Gestión completa de tu laboratorio dental ${user.laboratorio ? `- ${user.laboratorio}` : ''}`
             }
           </p>
 
@@ -709,9 +699,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                 {!membresia.cargando && (
                   <span style={{
                     ...styles.planBadge,
-                    ...(membresiaActiva ? styles.planActive : styles.planInactive)
+                    ...(membresia.estaActiva ? styles.planActive : styles.planInactive)
                   }}>
-                    {membresiaActiva ? 'ACTIVO' : 'INACTIVO'}
+                    {membresia.estaActiva ? 'ACTIVO' : 'VENCIDO'}
                   </span>
                 )}
               </div>
@@ -921,8 +911,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                         {paciente.clinica} • {paciente.dentista}
                       </div>
                       <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.25rem' }}>
-                        ${paciente.precio_total || 0}
-                        {paciente.laboratorista && ` • 👨‍🔧 ${paciente.laboratorista}`}
+                        {verPrecios && `$${paciente.precio_total || 0}`}
+                        {paciente.laboratorista && `${verPrecios ? ' • ' : ''}👨‍🔧 ${paciente.laboratorista}`}
                       </div>
                     </div>
                   ))}
@@ -959,7 +949,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
                         {trabajo.clinica} • {trabajo.dentista}
                       </div>
                       <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.25rem' }}>
-                        Laboratorista: {trabajo.laboratorista} • ${trabajo.precio_total || 0}
+                        Laboratorista: {trabajo.laboratorista}{verPrecios && ` • $${trabajo.precio_total || 0}`}
                       </div>
                     </div>
                   ))}
@@ -987,12 +977,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               marginBottom: '2rem',
               color: '#1e293b'
             }}>
-              {esAdmin ? 'Módulos del Sistema' : (membresiaActiva ? 'Módulos del Sistema' : 'Acceso Restringido')}
+              Módulos del Sistema
             </h2>
 
             <div style={styles.modulesGrid}>
               {modules.map(module => {
-                const deshabilitado = !esAdmin && !membresiaActiva && module.id !== 'mi-membresia';
+                const deshabilitado = false;
 
                 return (
                   <div
@@ -1055,21 +1045,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               })}
             </div>
 
-            {/* Mensaje adicional para clientes con membresía inactiva */}
-            {!esAdmin && !membresiaActiva && (
-              <div style={{
-                backgroundColor: '#fef3c7',
-                border: '1px solid #fbbf24',
-                borderRadius: '0.75rem',
-                padding: '1.5rem',
-                marginTop: '1rem',
-                textAlign: 'center' as const
-              }}>
-                <p style={{ margin: 0, color: '#92400e', fontSize: '1rem' }}>
-                  ⚠️ Tu membresía no está activa. Solo puedes acceder al módulo "Mi Membresía" para renovar.
-                </p>
-              </div>
-            )}
           </>
         )}
       </main>
