@@ -263,13 +263,13 @@ const App: React.FC = () => {
       <Route path="/reportes" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><Reportes onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/admin" element={<ProtectedRoute allowedRoles={['super_admin']}><AdminPanel onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
       <Route path="/opciones-cuenta" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><OpcionesCuenta onBack={() => navigate('/dashboard')} /></ProtectedRoute>} />
-      <Route path="/entregas" element={<ProtectedRoute allowedRoles={['admin', 'cliente']}><QREntrega /></ProtectedRoute>} />
+      <Route path="/entregas" element={<ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}><QREntrega /></ProtectedRoute>} />
 
       {/* NUEVAS RUTAS PARA ÓRDENES DE TRABAJO */}
       <Route
         path="/ordenes"
         element={
-          <ProtectedRoute allowedRoles={['admin', 'cliente']}>
+          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
             <OrdenesLista />
           </ProtectedRoute>
         }
@@ -277,7 +277,7 @@ const App: React.FC = () => {
       <Route
         path="/ordenes/nueva"
         element={
-          <ProtectedRoute allowedRoles={['admin', 'cliente']}>
+          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
             <OrdenFormulario />
           </ProtectedRoute>
         }
@@ -285,7 +285,7 @@ const App: React.FC = () => {
       <Route
         path="/ordenes/:id"
         element={
-          <ProtectedRoute allowedRoles={['admin', 'cliente']}>
+          <ProtectedRoute allowedRoles={['admin', 'cliente', 'laboratorista']}>
             <OrdenFormulario />
           </ProtectedRoute>
         }

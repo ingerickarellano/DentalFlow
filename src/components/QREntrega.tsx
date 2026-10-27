@@ -11,7 +11,8 @@ interface Trabajo {
   clinica_id: string;
   estado: string;
   fecha_creacion: string;
-  precio_total: number;
+  precio_total?: number;
+  laboratorio_id?: string;
 }
 
 interface Clinica {
@@ -34,11 +35,34 @@ const QREntrega: React.FC = () => {
   const [mensaje, setMensaje] = useState('');
   const [tipoMensaje, setTipoMensaje] = useState<'success' | 'error' | ''>('');
 
+  // Laboratorista: solo con permiso de despacho y solo sus trabajos (lo valida la base de datos)
+  const [esLaboratorista, setEsLaboratorista] = useState(false);
+  const [permiso, setPermiso] = useState<'cargando' | 'si' | 'no'>('cargando');
+
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { if (activo) setPermiso('no'); return; }
+      const { data: perfil } = await supabase
+        .from('perfiles_usuarios')
+        .select('rol')
+        .eq('id', user.id)
+        .maybeSingle();
+      const laboratorista = perfil?.rol === 'laboratorista';
+      const { data: despacha } = await supabase.rpc('puede_despachar');
+      if (!activo) return;
+      setEsLaboratorista(laboratorista);
+      setPermiso(despacha === true ? 'si' : 'no');
+    })();
+    return () => { activo = false; };
+  }, []);
+
   const webcamRef = useRef<Webcam>(null);
   const qrScannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   useEffect(() => {
-    if (scanning) {
+    if (scanning && permiso === 'si') {
       iniciarScanner();
     }
 
@@ -47,7 +71,7 @@ const QREntrega: React.FC = () => {
         qrScannerRef.current.clear();
       }
     };
-  }, [scanning]);
+  }, [scanning, permiso]);
 
   const iniciarScanner = () => {
     qrScannerRef.current = new Html5QrcodeScanner(
@@ -75,17 +99,23 @@ const QREntrega: React.FC = () => {
   const cargarTrabajo = async (trabajoId: string) => {
     try {
       setLoading(true);
+      // El laboratorista lee la vista sin precios (solo encuentra sus trabajos)
       const { data: trabajoData, error: trabajoError } = await supabase
-        .from('trabajos')
-        .select('*, clinicas(*)')
+        .from(esLaboratorista ? 'trabajos_vista' : 'trabajos')
+        .select('*')
         .eq('id', trabajoId)
         .single();
 
       if (trabajoError) throw trabajoError;
 
       if (trabajoData) {
+        const { data: clinicaData } = await supabase
+          .from('clinicas')
+          .select('id, nombre, direccion, telefono')
+          .eq('id', trabajoData.clinica_id)
+          .maybeSingle();
         setTrabajo(trabajoData);
-        setClinica(trabajoData.clinicas);
+        setClinica(clinicaData || { id: '', nombre: trabajoData.clinica_nombre || '-', direccion: '', telefono: '' });
         setScanning(false);
         
         if (qrScannerRef.current) {
@@ -93,7 +123,7 @@ const QREntrega: React.FC = () => {
         }
       }
     } catch (error) {
-      mostrarMensaje('Trabajo no encontrado', 'error');
+      mostrarMensaje(esLaboratorista ? 'Trabajo no encontrado o no es uno de tus trabajos' : 'Trabajo no encontrado', 'error');
       console.error('Error cargando trabajo:', error);
     } finally {
       setLoading(false);
@@ -114,11 +144,13 @@ const QREntrega: React.FC = () => {
       // Convertir base64 a blob
       const blob = await fetch(fotoTomada).then(res => res.blob());
       
-      // Generar nombre único para la foto
-      const fileName = `entrega_${trabajo.id}_${Date.now()}.jpg`;
-      
-      // Subir a Supabase Storage
-      const { data, error } = await supabase.storage
+      // Ruta privada: <laboratorio>/<trabajo>/<archivo>. La foto ya no es pública:
+      // se guarda la ruta y solo la ven quienes pueden ver el trabajo.
+      const laboratorioId = trabajo.laboratorio_id;
+      if (!laboratorioId) throw new Error('El trabajo no tiene laboratorio');
+      const fileName = `${laboratorioId}/${trabajo.id}/${Date.now()}.jpg`;
+
+      const { error } = await supabase.storage
         .from('entregas')
         .upload(fileName, blob, {
           contentType: 'image/jpeg',
@@ -126,13 +158,7 @@ const QREntrega: React.FC = () => {
         });
 
       if (error) throw error;
-
-      // Obtener URL pública
-      const { data: urlData } = supabase.storage
-        .from('entregas')
-        .getPublicUrl(fileName);
-
-      return urlData.publicUrl;
+      return fileName;
     } catch (error) {
       console.error('Error subiendo foto:', error);
       return null;
@@ -151,33 +177,17 @@ const QREntrega: React.FC = () => {
       // 1. Subir foto si existe
       const fotoUrl = fotoTomada ? await subirFoto() : null;
 
-      // 2. Actualizar estado del trabajo
-      const { error: updateError } = await supabase
-        .from('trabajos')
-        .update({
-          estado: 'entregado',
-          fecha_entrega: new Date().toISOString(),
-          entregado_por: entregadoPor,
-          receptor_nombre: receptorNombre,
-          observaciones_entrega: observaciones,
-          foto_entrega_url: fotoUrl,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', trabajo.id);
+      // 2. Marcar el trabajo como entregado y registrar el historial (una sola operación;
+      //    la base de datos valida el permiso de despacho y que el trabajo sea visible)
+      const { error: entregaError } = await supabase.rpc('registrar_entrega', {
+        p_trabajo_id: trabajo.id,
+        p_entregado_por: entregadoPor,
+        p_receptor: receptorNombre,
+        p_observaciones: observaciones,
+        p_foto_url: fotoUrl
+      });
 
-      if (updateError) throw updateError;
-
-      // 3. Registrar en historial
-      await supabase
-        .from('historial_entregas')
-        .insert({
-          trabajo_id: trabajo.id,
-          entregado_por: entregadoPor,
-          receptor_nombre: receptorNombre,
-          observaciones: observaciones,
-          foto_url: fotoUrl,
-          creado_en: new Date().toISOString()
-        });
+      if (entregaError) throw entregaError;
 
       mostrarMensaje('✅ Entrega registrada exitosamente', 'success');
 
@@ -186,8 +196,9 @@ const QREntrega: React.FC = () => {
         resetFormulario();
       }, 2000);
 
-    } catch (error) {
-      mostrarMensaje('Error registrando entrega', 'error');
+    } catch (error: any) {
+      const texto = String(error?.message || '');
+      mostrarMensaje(/^[A-Z_]+:\s*/.test(texto) ? texto.replace(/^[A-Z_]+:\s*/, '') : 'Error registrando entrega', 'error');
       console.error('Error:', error);
     } finally {
       setLoading(false);
@@ -318,7 +329,22 @@ const QREntrega: React.FC = () => {
           </div>
         )}
 
-        {scanning && !trabajo && (
+        {permiso === 'cargando' && (
+          <div style={styles.card}>
+            <p style={{ textAlign: 'center', color: '#64748b' }}>Cargando...</p>
+          </div>
+        )}
+
+        {permiso === 'no' && (
+          <div style={styles.card}>
+            <h2 style={{ textAlign: 'center', marginBottom: '1rem' }}>🔒 Sin permiso de despacho</h2>
+            <p style={{ textAlign: 'center', color: '#64748b' }}>
+              Para registrar entregas, el administrador del laboratorio debe activarte el permiso de despacho.
+            </p>
+          </div>
+        )}
+
+        {permiso === 'si' && scanning && !trabajo && (
           <div style={styles.card}>
             <h2 style={{ textAlign: 'center', marginBottom: '1rem' }}>
               📦 Escanear Código QR
@@ -367,7 +393,9 @@ const QREntrega: React.FC = () => {
               <p><strong>Clínica:</strong> {clinica.nombre}</p>
               <p><strong>Dirección:</strong> {clinica.direccion}</p>
               <p><strong>Teléfono:</strong> {clinica.telefono}</p>
-              <p><strong>Total:</strong> ${trabajo.precio_total.toLocaleString()}</p>
+              {!esLaboratorista && trabajo.precio_total != null && (
+                <p><strong>Total:</strong> ${Number(trabajo.precio_total).toLocaleString()}</p>
+              )}
             </div>
 
             {/* Cámara para foto */}

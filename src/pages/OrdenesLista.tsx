@@ -8,6 +8,8 @@ const OrdenesLista: React.FC = () => {
   const [ordenes, setOrdenes] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
   const [usuario, setUsuario] = useState<any>(null);
+  // Laboratorista: lee la vista sin montos (sin costo final ni anticipos)
+  const [esLaboratorista, setEsLaboratorista] = useState(false);
 
   useEffect(() => {
     cargarUsuarioYOrdenes();
@@ -36,26 +38,34 @@ const OrdenesLista: React.FC = () => {
         telefono: perfil?.telefono || user.user_metadata?.telefono,
       });
 
-      const { data, error } = await supabase
-        .from('ordenes_trabajo')
-        .select(`
-          *,
-          trabajo:trabajo_id (
-            id,
-            paciente,
-            servicios,
-            precio_total,
-            fecha_creacion,
-            fecha_entrega_estimada,
-            notas,
-            estado,
-            clinica:clinica_id (id, nombre, direccion, telefono),
-            dentista:dentista_id (id, nombre),
-            laboratorista:laboratorista_id (id, nombre)
-          )
-        `)
-        .eq('usuario_id', user.id)
-        .order('created_at', { ascending: false });
+      const laboratorista = perfil?.rol === 'laboratorista';
+      setEsLaboratorista(laboratorista);
+
+      // Admin: todas las órdenes de su laboratorio. Laboratorista: las de sus trabajos, sin montos.
+      const { data, error } = laboratorista
+        ? await supabase
+            .from('ordenes_vista')
+            .select('*')
+            .order('created_at', { ascending: false })
+        : await supabase
+            .from('ordenes_trabajo')
+            .select(`
+              *,
+              trabajo:trabajo_id (
+                id,
+                paciente,
+                servicios,
+                precio_total,
+                fecha_creacion,
+                fecha_entrega_estimada,
+                notas,
+                estado,
+                clinica:clinica_id (id, nombre, direccion, telefono),
+                dentista:dentista_id (id, nombre),
+                laboratorista:laboratorista_id (id, nombre)
+              )
+            `)
+            .order('created_at', { ascending: false });
 
       if (error) throw error;
       setOrdenes(data || []);
@@ -70,19 +80,25 @@ const OrdenesLista: React.FC = () => {
   // ========== FUNCIÓN DE IMPRESIÓN PARA ÓRDENES (sin tabla de prestaciones) ==========
   const imprimirOrden = async (ordenId: string) => {
     try {
-      const { data: orden, error } = await supabase
-        .from('ordenes_trabajo')
-        .select(`
-          *,
-          trabajo:trabajo_id (
-            *,
-            clinica:clinica_id (*),
-            dentista:dentista_id (*),
-            laboratorista:laboratorista_id (*)
-          )
-        `)
-        .eq('id', ordenId)
-        .single();
+      const { data: orden, error } = esLaboratorista
+        ? await supabase
+            .from('ordenes_vista')
+            .select('*')
+            .eq('id', ordenId)
+            .single()
+        : await supabase
+            .from('ordenes_trabajo')
+            .select(`
+              *,
+              trabajo:trabajo_id (
+                *,
+                clinica:clinica_id (*),
+                dentista:dentista_id (*),
+                laboratorista:laboratorista_id (*)
+              )
+            `)
+            .eq('id', ordenId)
+            .single();
 
       if (error) throw error;
 
@@ -175,7 +191,7 @@ const OrdenesLista: React.FC = () => {
         <h4>Finalización</h4>
         <p><span class="label">Yeso:</span> ${orden.tipo_yeso || '-'}</p>
         <p><span class="label">Fecha entrega:</span> ${orden.fecha_entrega ? new Date(orden.fecha_entrega).toLocaleDateString() : '-'}</p>
-        <p><span class="label">Costo final:</span> $${orden.costo_final?.toLocaleString() || trabajo?.precio_total?.toLocaleString() || '0'}</p>
+        ${esLaboratorista ? '' : `<p><span class="label">Costo final:</span> $${orden.costo_final?.toLocaleString() || trabajo?.precio_total?.toLocaleString() || '0'}</p>`}
         <p><span class="label">Firma:</span> ${orden.firma || '-'}</p>
       </div>
     `;
@@ -372,6 +388,8 @@ const OrdenesLista: React.FC = () => {
             <p style={{ color: '#64748b' }}>No hay órdenes de trabajo registradas.</p>
           </div>
         ) : (
+          // En pantallas angostas la tabla se desplaza dentro de su caja, sin cortar la página
+          <div style={{ width: '100%', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             <thead style={{ background: '#f1f5f9' }}>
               <tr>
@@ -420,6 +438,7 @@ const OrdenesLista: React.FC = () => {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>
