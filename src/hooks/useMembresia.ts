@@ -24,6 +24,9 @@ export interface MembresiaInfo {
   esGratuita: boolean;
   limiteClinicas: number | null; // null = ilimitado
   clinicas: number;
+  limiteTrabajosMes: number | null; // null = ilimitado
+  trabajosMes: number;              // trabajos creados en el mes actual
+  precioMensual: number;            // precio actual del plan (CLP)
   laboratorioId: string | null;
   laboratorio: string;
   rol: string;
@@ -52,6 +55,9 @@ const ESTADO_INICIAL: MembresiaInfo = {
   esGratuita: true,
   limiteClinicas: 3,
   clinicas: 0,
+  limiteTrabajosMes: 10,
+  trabajosMes: 0,
+  precioMensual: 0,
   laboratorioId: null,
   laboratorio: '',
   rol: '',
@@ -79,7 +85,7 @@ export const useMembresia = (userId: string | undefined) => {
 
         if (!fila) {
           // Sin laboratorio asociado (por ejemplo, super administrador de la plataforma)
-          setMembresia({ ...ESTADO_INICIAL, soloLectura: false, limiteClinicas: null, cargando: false });
+          setMembresia({ ...ESTADO_INICIAL, soloLectura: false, limiteClinicas: null, limiteTrabajosMes: null, cargando: false });
           return;
         }
 
@@ -97,6 +103,9 @@ export const useMembresia = (userId: string | undefined) => {
           esGratuita: plan === 'gratuito',
           limiteClinicas: fila.limite_clinicas ?? null,
           clinicas: fila.clinicas ?? 0,
+          limiteTrabajosMes: fila.limite_trabajos_mes ?? null,
+          trabajosMes: fila.trabajos_mes ?? 0,
+          precioMensual: Number(fila.precio_mensual) || 0,
           laboratorioId: fila.laboratorio_id,
           laboratorio: fila.laboratorio || '',
           rol: fila.rol || '',

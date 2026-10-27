@@ -88,6 +88,9 @@ const OrdenFormulario: React.FC = () => {
   const [trabajoId, setTrabajoId] = useState<string | null>(null);
   const [configLaboratorio, setConfigLaboratorio] = useState<any>(null);
   const [dienteEnEdicion, setDienteEnEdicion] = useState<number | null>(null);
+  // Laboratorista: la orden va sobre un trabajo que ya existe y sin montos
+  const [esLaboratorista, setEsLaboratorista] = useState(false);
+  const [trabajosDisponibles, setTrabajosDisponibles] = useState<any[]>([]);
 
   const [formData, setFormData] = useState<OrdenData>({
     paciente: '',
@@ -140,14 +143,15 @@ const OrdenFormulario: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    cargarDatosIniciales();
-    if (id) cargarOrden(id);
+    cargarDatosIniciales().then(laboratorista => {
+      if (id) cargarOrden(id, laboratorista);
+    });
   }, [id]);
 
-  const cargarDatosIniciales = async () => {
+  const cargarDatosIniciales = async (): Promise<boolean> => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) return false;
 
       const { data: perfil } = await supabase
         .from('perfiles_usuarios')
@@ -179,18 +183,55 @@ const OrdenFormulario: React.FC = () => {
       setClinicas(clinicasRes.data || []);
       setDentistas(dentistasRes.data || []);
       setLaboratoristas(laboratoristasRes.data || []);
+
+      const laboratorista = perfil?.rol === 'laboratorista';
+      setEsLaboratorista(laboratorista);
+      if (laboratorista) {
+        // Sus trabajos que todavía no tienen orden (un trabajo = una orden)
+        const [trabajosRes, ordenesRes] = await Promise.all([
+          supabase.from('trabajos_vista')
+            .select('id, paciente, clinica_id, clinica_nombre, dentista_id, laboratorista_id, fecha_creacion, fecha_entrega_estimada, notas, estado')
+            .order('fecha_creacion', { ascending: false }),
+          supabase.from('ordenes_vista').select('trabajo_id')
+        ]);
+        const conOrden = new Set((ordenesRes.data || []).map((o: any) => o.trabajo_id));
+        setTrabajosDisponibles((trabajosRes.data || []).filter((t: any) => !conOrden.has(t.id)));
+      }
+      return laboratorista;
     } catch (error) {
       console.error('Error cargando datos iniciales:', error);
+      return false;
     }
   };
 
-  const cargarOrden = async (ordenId: string) => {
+  // Laboratorista: al elegir el trabajo se completan sus datos (no se editan aquí)
+  const seleccionarTrabajo = (id: string) => {
+    const t = trabajosDisponibles.find(x => x.id === id);
+    setTrabajoId(t ? t.id : null);
+    setFormData(prev => ({
+      ...prev,
+      paciente: t?.paciente || '',
+      clinica_id: t?.clinica_id || '',
+      dentista_id: t?.dentista_id || '',
+      laboratorista_id: t?.laboratorista_id || '',
+      fecha_entrega_estimada: t?.fecha_entrega_estimada || '',
+      notas: t?.notas || ''
+    }));
+  };
+
+  const cargarOrden = async (ordenId: string, laboratorista: boolean) => {
     try {
-      const { data, error } = await supabase
-        .from('ordenes_trabajo')
-        .select(`*, trabajo:trabajo_id (*)`)
-        .eq('id', ordenId)
-        .single();
+      const { data, error } = laboratorista
+        ? await supabase
+            .from('ordenes_vista')
+            .select('*')
+            .eq('id', ordenId)
+            .single()
+        : await supabase
+            .from('ordenes_trabajo')
+            .select(`*, trabajo:trabajo_id (*)`)
+            .eq('id', ordenId)
+            .single();
       if (error) throw error;
       if (data) {
         setTrabajoId(data.trabajo_id);
@@ -229,7 +270,7 @@ const OrdenFormulario: React.FC = () => {
           tipo_yeso: data.tipo_yeso || '',
           firma: data.firma || '',
           fecha_entrega: data.fecha_entrega || '',
-          costo_final: data.costo_final,
+          costo_final: data.costo_final ?? null,
           piezas: data.piezas || {},
         });
       }
@@ -259,11 +300,62 @@ const OrdenFormulario: React.FC = () => {
     }));
   };
 
+  // Campos técnicos de la orden (sin dueño, trabajo ni montos)
+  const camposTecnicos = () => ({
+    protesista_nombre: formData.protesista_nombre,
+    doctor_nombre: formData.doctor_nombre,
+    direccion: formData.direccion,
+    cp: formData.cp,
+    telefono: formData.telefono,
+    analisis_impresion: formData.analisis_impresion || null,
+    analisis_modelo: formData.analisis_modelo || null,
+    aporta_registros: formData.aporta_registros,
+    cuales_registros: formData.cuales_registros,
+    articulado: formData.articulado || null,
+    metalica: formData.metalica,
+    estetica: formData.estetica,
+    especificaciones: formData.especificaciones,
+    aleacion: formData.aleacion,
+    material_estetico: formData.material_estetico,
+    tipo_pontico: formData.tipo_pontico,
+    color: formData.color,
+    protesis_removible: formData.protesis_removible,
+    protesis_total: formData.protesis_total,
+    protesis_parcial: formData.protesis_parcial,
+    removable: formData.removable,
+    diseno_esqueleto: formData.diseno_esqueleto,
+    ortodoncia_superior: formData.ortodoncia_superior,
+    ortodoncia_inferior: formData.ortodoncia_inferior,
+    aparato_realizar: formData.aparato_realizar,
+    tipo_yeso: formData.tipo_yeso,
+    firma: formData.firma,
+    fecha_entrega: formData.fecha_entrega || null,
+    piezas: formData.piezas,
+  });
+
+  // Laboratorista: la base de datos valida que el trabajo sea suyo y no guarda montos
+  const guardarComoLaboratorista = async () => {
+    if (!id && !trabajoId) throw new Error('Selecciona el trabajo al que corresponde la orden');
+    const { error } = await supabase.rpc('guardar_orden', {
+      p_orden_id: id || null,
+      p_trabajo_id: id ? null : trabajoId,
+      p_datos: camposTecnicos(),
+      p_notas: formData.notas ?? ''
+    });
+    if (error) throw new Error(String(error.message || '').replace(/^[A-Z_]+:\s*/, ''));
+    alert('✅ Orden guardada correctamente');
+    navigate('/ordenes');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCargando(true);
 
     try {
+      if (esLaboratorista) {
+        await guardarComoLaboratorista();
+        return;
+      }
       if (!formData.paciente) throw new Error('El nombre del paciente es requerido');
       if (!formData.clinica_id) throw new Error('Debe seleccionar una clínica');
       if (!formData.dentista_id) throw new Error('Debe seleccionar un dentista');
@@ -286,9 +378,14 @@ const OrdenFormulario: React.FC = () => {
       let nuevoTrabajoId: string;
 
       if (id && trabajoId) {
+        // Editar la orden NO toca los servicios ni el precio del trabajo
+        // (se gestionan en Gestión de Trabajos)
+        const datosTrabajoEditables: Record<string, any> = { ...trabajoData };
+        delete datosTrabajoEditables.servicios;
+        delete datosTrabajoEditables.precio_total;
         const { error } = await supabase
           .from('trabajos')
-          .update(trabajoData)
+          .update(datosTrabajoEditables)
           .eq('id', trabajoId);
         if (error) throw error;
         nuevoTrabajoId = trabajoId;
@@ -307,36 +404,8 @@ const OrdenFormulario: React.FC = () => {
       const ordenData = {
         trabajo_id: nuevoTrabajoId,
         usuario_id: usuario.id,
-        protesista_nombre: formData.protesista_nombre,
-        doctor_nombre: formData.doctor_nombre,
-        direccion: formData.direccion,
-        cp: formData.cp,
-        telefono: formData.telefono,
-        analisis_impresion: formData.analisis_impresion || null,
-        analisis_modelo: formData.analisis_modelo || null,
-        aporta_registros: formData.aporta_registros,
-        cuales_registros: formData.cuales_registros,
-        articulado: formData.articulado || null,
-        metalica: formData.metalica,
-        estetica: formData.estetica,
-        especificaciones: formData.especificaciones,
-        aleacion: formData.aleacion,
-        material_estetico: formData.material_estetico,
-        tipo_pontico: formData.tipo_pontico,
-        color: formData.color,
-        protesis_removible: formData.protesis_removible,
-        protesis_total: formData.protesis_total,
-        protesis_parcial: formData.protesis_parcial,
-        removable: formData.removable,
-        diseno_esqueleto: formData.diseno_esqueleto,
-        ortodoncia_superior: formData.ortodoncia_superior,
-        ortodoncia_inferior: formData.ortodoncia_inferior,
-        aparato_realizar: formData.aparato_realizar,
-        tipo_yeso: formData.tipo_yeso,
-        firma: formData.firma,
-        fecha_entrega: formData.fecha_entrega || null,
+        ...camposTecnicos(),
         costo_final: formData.costo_final,
-        piezas: formData.piezas,
       };
 
       if (id) {
@@ -676,6 +745,29 @@ const OrdenFormulario: React.FC = () => {
                 {/* Datos del caso */}
                 <div style={styles.section}>
                   <h3 style={styles.sectionTitle}>📋 Datos del caso</h3>
+                  {esLaboratorista && !id && (
+                    <div style={{ ...styles.field, marginBottom: '10px' }}>
+                      <label style={styles.label}>Trabajo *</label>
+                      <select
+                        style={styles.input}
+                        value={trabajoId || ''}
+                        onChange={(e) => seleccionarTrabajo(e.target.value)}
+                        required
+                      >
+                        <option value="">Seleccionar trabajo</option>
+                        {trabajosDisponibles.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.paciente} — {t.clinica_nombre || 'Sin clínica'} — {new Date(t.fecha_creacion).toLocaleDateString()}
+                          </option>
+                        ))}
+                      </select>
+                      <p style={{ fontSize: '0.7rem', color: '#333', margin: '3px 0 0' }}>
+                        {trabajosDisponibles.length === 0
+                          ? 'No tienes trabajos sin orden. Primero crea el trabajo en "Crear Lista de Trabajo".'
+                          : 'La orden se agrega a un trabajo ya creado. Paciente, clínica y dentista vienen del trabajo.'}
+                      </p>
+                    </div>
+                  )}
                   <div style={styles.grid2}>
                     <div style={styles.field}>
                       <label style={styles.label}>Protesista</label>
@@ -730,6 +822,7 @@ const OrdenFormulario: React.FC = () => {
                         value={formData.paciente}
                         onChange={(e) => handleChange('paciente', e.target.value)}
                         required
+                        disabled={esLaboratorista}
                       />
                     </div>
                     <div style={styles.field}>
@@ -739,6 +832,7 @@ const OrdenFormulario: React.FC = () => {
                         value={formData.clinica_id}
                         onChange={(e) => handleChange('clinica_id', e.target.value)}
                         required
+                        disabled={esLaboratorista}
                       >
                         <option value="">Seleccionar</option>
                         {clinicas.map(c => (
@@ -752,7 +846,8 @@ const OrdenFormulario: React.FC = () => {
                         style={styles.input}
                         value={formData.dentista_id}
                         onChange={(e) => handleChange('dentista_id', e.target.value)}
-                        required
+                        required={!esLaboratorista}
+                        disabled={esLaboratorista}
                       >
                         <option value="">Seleccionar</option>
                         {dentistas
@@ -768,6 +863,7 @@ const OrdenFormulario: React.FC = () => {
                         style={styles.input}
                         value={formData.laboratorista_id}
                         onChange={(e) => handleChange('laboratorista_id', e.target.value)}
+                        disabled={esLaboratorista}
                       >
                         <option value="">Sin asignar</option>
                         {laboratoristas.map(l => (
@@ -782,6 +878,7 @@ const OrdenFormulario: React.FC = () => {
                         style={styles.input}
                         value={formData.fecha_entrega_estimada}
                         onChange={(e) => handleChange('fecha_entrega_estimada', e.target.value)}
+                        disabled={esLaboratorista}
                       />
                     </div>
                   </div>
@@ -1180,15 +1277,17 @@ const OrdenFormulario: React.FC = () => {
                         onChange={(e) => handleChange('fecha_entrega', e.target.value)}
                       />
                     </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Costo final</label>
-                      <input
-                        type="number"
-                        style={styles.input}
-                        value={formData.costo_final || ''}
-                        onChange={(e) => handleChange('costo_final', e.target.value ? Number(e.target.value) : null)}
-                      />
-                    </div>
+                    {!esLaboratorista && (
+                      <div style={styles.field}>
+                        <label style={styles.label}>Costo final</label>
+                        <input
+                          type="number"
+                          style={styles.input}
+                          value={formData.costo_final || ''}
+                          onChange={(e) => handleChange('costo_final', e.target.value ? Number(e.target.value) : null)}
+                        />
+                      </div>
+                    )}
                     <div style={styles.field}>
                       <label style={styles.label}>Firma</label>
                       <input

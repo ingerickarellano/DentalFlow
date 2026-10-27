@@ -60,6 +60,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   const [cargandoBusqueda, setCargandoBusqueda] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
 
+  // Laboratorista: el Registro de Entregas solo aparece si el admin le dio permiso de despacho
+  const [puedeDespachar, setPuedeDespachar] = useState(false);
+  useEffect(() => {
+    if (user.rol !== 'laboratorista') return;
+    let activo = true;
+    supabase.rpc('puede_despachar').then(({ data }) => {
+      if (activo) setPuedeDespachar(data === true);
+    });
+    return () => { activo = false; };
+  }, [user.rol]);
+
   // Nombre del laboratorio: el de Configuración (el que sale en los reportes);
   // si no existe, el ingresado al registrarse.
   const [nombreLaboratorio, setNombreLaboratorio] = useState<string>(user.laboratorio || '');
@@ -301,11 +312,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   ];
 
   // Laboratorista: mismas herramientas de trabajo que el admin, sin precios ni administración.
-  // (Órdenes de Trabajo y Registro de Entregas se habilitan en la entrega 1b-3.)
+  // Registro de Entregas solo si tiene permiso de despacho.
   const modulesLaboratorista: Module[] = [
     { id: 'clinicas', icon: '🏥', title: 'Clínicas y Dentistas', description: 'Clínicas y odontólogos del laboratorio.', path: '/clinicas' },
     { id: 'crear-trabajo', icon: '📋', title: 'Crear Lista de Trabajo', description: 'Registra trabajos seleccionando clínica, dentista y servicios del catálogo.', path: '/crear-trabajo' },
-    { id: 'trabajos-proceso', icon: '🔧', title: 'Mis Trabajos', description: 'Los trabajos que creaste o que te asignaron: estados, notas e impresión.', path: '/trabajos' }
+    { id: 'trabajos-proceso', icon: '🔧', title: 'Mis Trabajos', description: 'Los trabajos que creaste o que te asignaron: estados, notas e impresión.', path: '/trabajos' },
+    { id: 'ordenes', icon: '🏍️', title: 'Órdenes de Trabajo', description: 'Especificaciones técnicas y selector de dientes de tus trabajos.', path: '/ordenes' },
+    ...(puedeDespachar
+      ? [{ id: 'entregas', icon: '📦', title: 'Registro de Entregas', description: 'Escanea el código QR de tus trabajos para registrar su entrega.', path: '/entregas' }]
+      : [])
   ];
 
   const modules = user.rol === 'super_admin'
@@ -661,9 +676,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   // ============================================
   const esAdmin = user.rol === 'admin';
   const esLaboratorista = user.rol === 'laboratorista';
+  const esSuperAdmin = user.rol === 'super_admin';
   const verPrecios = !esLaboratorista;
   // Con el plan vencido se puede ver todo (solo lectura); la base impide crear.
-  const mostrarBusquedaYEstadisticas = true;
+  // El super admin no pertenece a un laboratorio: no ve plan, búsqueda ni estadísticas de laboratorio.
+  const mostrarBusquedaYEstadisticas = !esSuperAdmin;
 
   return (
     <div style={styles.container}>
@@ -682,9 +699,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
             ¡Bienvenido de nuevo, {user.nombre}!
             {esAdmin && <span style={styles.adminBadge}>ADMINISTRADOR</span>}
             {esLaboratorista && <span style={{ ...styles.adminBadge, backgroundColor: '#0f766e' }}>LABORATORISTA</span>}
+            {esSuperAdmin && <span style={{ ...styles.adminBadge, backgroundColor: '#7c3aed' }}>SUPER ADMIN</span>}
           </h1>
           <p style={styles.welcomeSubtitle}>
-            {esAdmin
+            {esSuperAdmin
+              ? 'Administración de la plataforma DentalFlow: laboratorios, planes y pagos.'
+              : esAdmin
               ? 'Sistema de gestión completo - Modo Administrador'
               : esLaboratorista
                 ? `Laboratorista de ${membresia.laboratorio || user.laboratorio || 'tu laboratorio'}`
@@ -693,6 +713,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
           </p>
 
           {/* Subscription Info */}
+          {!esSuperAdmin && (
           <div style={styles.subscriptionCard}>
             <div style={styles.subscriptionItem}>
               <div style={styles.subscriptionLabel}>Plan Actual</div>
@@ -735,8 +756,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
               <div style={styles.subscriptionValue}>🏢 {nombreLaboratorio || 'Sin nombre configurado'}</div>
             </div>
           </div>
+          )}
 
-          {!membresia.cargando && membresia.soloLectura && (
+          {!esSuperAdmin && !membresia.cargando && membresia.soloLectura && (
             <div style={styles.soloLecturaBanner} role="alert">
               <div style={styles.soloLecturaTexto}>
                 <strong>

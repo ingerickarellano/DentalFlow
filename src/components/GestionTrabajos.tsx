@@ -933,8 +933,9 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
   const imprimirTrabajo = async (trabajo: TrabajoAgrupado) => {
     try {
       setCargando(true);
+      // Laboratorista: orden sin montos
       const { data: orden } = await supabase
-        .from('ordenes_trabajo')
+        .from(esLaboratorista ? 'ordenes_vista' : 'ordenes_trabajo')
         .select('*')
         .eq('trabajo_id', trabajo.ids[0])
         .maybeSingle();

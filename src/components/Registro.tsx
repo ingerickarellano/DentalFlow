@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { usePlanes } from '../hooks/usePlanes';
 
 interface RegistroProps {
   onBack?: () => void;
@@ -45,7 +46,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
     {
       id: 'profesional',
       nombre: 'Plan Profesional',
-      precio: 49,
+      precio: 8000,
       duracion: 'mes',
       caracteristicas: [
         'Clínicas ilimitadas',
@@ -58,7 +59,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
     {
       id: 'enterprise',
       nombre: 'Plan Enterprise',
-      precio: 99,
+      precio: 16000,
       duracion: 'mes',
       caracteristicas: [
         'Todo del plan Profesional',
@@ -70,7 +71,14 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
     }
   ];
 
-  const [plan] = useState(planesMembresia.find(p => p.id === planSeleccionado) || planesMembresia[0]);
+  // Montos en pesos chilenos: $8.000
+  const formatearCLP = (monto: number) => `$${monto.toLocaleString('es-CL')}`;
+
+  // El precio vigente viene de la tabla "planes" (lo administra el super admin);
+  // si aún no carga, se usa el valor de referencia de arriba.
+  const { plan: datosPlan } = usePlanes();
+  const [planBase] = useState(planesMembresia.find(p => p.id === planSeleccionado) || planesMembresia[0]);
+  const plan = { ...planBase, precio: datosPlan(planBase.id)?.precio_mensual ?? planBase.precio };
 
   const styles = {
     container: {
@@ -412,7 +420,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
         <div style={styles.planSummary}>
           <h3 style={styles.planName}>{plan.nombre}</h3>
           <div style={styles.planPrice}>
-            {plan.precio === 0 ? 'Gratis' : `$${plan.precio}`}
+            {plan.precio === 0 ? 'Gratis' : formatearCLP(plan.precio)}
             <span style={{ fontSize: '1rem', color: '#64748b' }}>
               {plan.precio > 0 ? '/mes' : ` - ${plan.duracion}`}
             </span>
@@ -550,7 +558,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
               <p><strong>Nombre:</strong> {formData.nombre}</p>
               <p><strong>Email:</strong> {formData.email}</p>
               <p><strong>Laboratorio:</strong> {formData.laboratorio}</p>
-              <p><strong>Plan:</strong> {plan.nombre} ({plan.precio === 0 ? 'Gratuito' : `$${plan.precio}/mes`})</p>
+              <p><strong>Plan:</strong> {plan.nombre} ({plan.precio === 0 ? 'Gratuito' : `${formatearCLP(plan.precio)} CLP/mes`})</p>
             </div>
 
             {/* Sección de Transferencia para Planes de Pago */}
@@ -600,7 +608,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
                         <p><strong>Cuenta:</strong> 123-45678-9</p>
                         <p><strong>RUT:</strong> 12.345.678-9</p>
                         <p><strong>Titular:</strong> DentalFlow SpA</p>
-                        <p><strong>Monto:</strong> ${plan.precio} USD/mes</p>
+                        <p><strong>Monto:</strong> {formatearCLP(plan.precio)} CLP/mes</p>
                         <p><strong>Email para comprobante:</strong> transferencias@dentalflow.com</p>
                       </div>
                     </div>
