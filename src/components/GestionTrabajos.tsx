@@ -173,7 +173,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
   // Sus cambios pasan por funciones de la base de datos que validan el acceso.
   const [esLaboratorista, setEsLaboratorista] = useState(false);
   const [puedeDespachar, setPuedeDespachar] = useState(true);
-  const { confirmar, avisar } = useDialogos();
+  const { confirmar, confirmarTexto, avisar } = useDialogos();
 
   // Selección para "Finalizar seleccionados" (clave = ids del trabajo agrupado)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
@@ -238,7 +238,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       setCargando(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        alert('No hay usuario autenticado');
+        avisar('No hay usuario autenticado');
         return;
       }
 
@@ -282,7 +282,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
 
     } catch (error) {
       console.error('Error cargando datos:', error);
-      alert('Error al cargar los datos. Por favor recarga la página.');
+      avisar('Error al cargar los datos. Por favor recarga la página.');
     } finally {
       setCargando(false);
     }
@@ -396,7 +396,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
   };
 
   const cambiarEstadoTrabajo = async (trabajoAgrupado: TrabajoAgrupado, nuevoEstado: Trabajo['estado']) => {
-    if (!window.confirm(`¿Cambiar estado del trabajo de "${trabajoAgrupado.paciente}" a ${nuevoEstado}?`)) return;
+    if (!await confirmarTexto(`¿Cambiar estado del trabajo de "${trabajoAgrupado.paciente}" a ${nuevoEstado}?`)) return;
 
     try {
       setCargando(true);
@@ -412,17 +412,17 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       setTrabajos(prev =>
         prev.map(t => trabajoAgrupado.ids.includes(t.id) ? { ...t, estado: nuevoEstado } : t)
       );
-      alert(`✅ Estado cambiado a ${nuevoEstado}`);
+      avisar(`✅ Estado cambiado a ${nuevoEstado}`);
     } catch (error) {
       console.error('Error cambiando estado:', error);
-      alert('❌ ' + mensajeDeError(error, 'Error al cambiar el estado'));
+      avisar('❌ ' + mensajeDeError(error, 'Error al cambiar el estado'));
     } finally {
       setCargando(false);
     }
   };
 
   const eliminarTrabajo = async (trabajoAgrupado: TrabajoAgrupado) => {
-    if (!window.confirm(`¿Eliminar trabajo de "${trabajoAgrupado.paciente}"? Esta acción no se puede deshacer.`)) return;
+    if (!await confirmarTexto(`¿Eliminar trabajo de "${trabajoAgrupado.paciente}"? Esta acción no se puede deshacer.`)) return;
 
     try {
       setCargando(true);
@@ -436,10 +436,10 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       if (error) throw error;
 
       setTrabajos(prev => prev.filter(t => !trabajoAgrupado.ids.includes(t.id)));
-      alert('✅ Trabajo eliminado');
+      avisar('✅ Trabajo eliminado');
     } catch (error) {
       console.error('Error eliminando trabajo:', error);
-      alert('❌ ' + mensajeDeError(error, 'Error al eliminar'));
+      avisar('❌ ' + mensajeDeError(error, 'Error al eliminar'));
     } finally {
       setCargando(false);
     }
@@ -527,10 +527,10 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       link.href = url;
       link.click();
 
-      alert('✅ QR descargado correctamente');
+      avisar('✅ QR descargado correctamente');
     } catch (error) {
       console.error('Error descargando QR:', error);
-      alert('❌ Error al descargar el QR');
+      avisar('❌ Error al descargar el QR');
     }
   };
 
@@ -552,10 +552,10 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         prev.map(t => t.id === trabajoConNotas.id ? { ...t, notas: nuevaNota } : t)
       );
       setModalNotasAbierto(false);
-      alert('✅ Notas guardadas correctamente');
+      avisar('✅ Notas guardadas correctamente');
     } catch (error) {
       console.error('Error guardando nota:', error);
-      alert('❌ ' + mensajeDeError(error, 'Error al guardar nota'));
+      avisar('❌ ' + mensajeDeError(error, 'Error al guardar nota'));
     } finally {
       setCargando(false);
     }
@@ -593,7 +593,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       // prestaciones que ya estaban y usa el catálogo para las nuevas)
       if (esLaboratorista) {
         if (serviciosEditando.length === 0) {
-          alert('El trabajo debe tener al menos una prestación. Si ya no corresponde, elimínalo.');
+          avisar('El trabajo debe tener al menos una prestación. Si ya no corresponde, elimínalo.');
           return;
         }
         const { error } = await supabase.rpc('editar_servicios_trabajo', {
@@ -613,7 +613,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           .filter(t => !otrosIds.includes(t.id))
           .map(t => t.id === primerId ? { ...t, servicios: serviciosEditando.map(s => ({ ...s, precio: 0 })) } : t));
         setModalEdicionAbierto(false);
-        alert('✅ Trabajo actualizado correctamente');
+        avisar('✅ Trabajo actualizado correctamente');
         return;
       }
 
@@ -643,10 +643,10 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       });
 
       setModalEdicionAbierto(false);
-      alert('✅ Trabajo actualizado correctamente');
+      avisar('✅ Trabajo actualizado correctamente');
     } catch (error) {
       console.error('Error actualizando trabajo:', error);
-      alert('❌ ' + mensajeDeError(error, 'Error al actualizar el trabajo'));
+      avisar('❌ ' + mensajeDeError(error, 'Error al actualizar el trabajo'));
     } finally {
       setCargando(false);
     }
@@ -977,7 +977,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       }
     } catch (error) {
       console.error('Error al imprimir:', error);
-      alert('Error al generar la vista de impresión');
+      avisar('Error al generar la vista de impresión');
     } finally {
       setCargando(false);
     }
@@ -1018,7 +1018,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
 
   const copiarID = (id: string, tipo: string) => {
     navigator.clipboard.writeText(id);
-    alert(`✅ ID de ${tipo} copiado al portapapeles`);
+    avisar(`✅ ID de ${tipo} copiado al portapapeles`);
   };
 
   const styles = {

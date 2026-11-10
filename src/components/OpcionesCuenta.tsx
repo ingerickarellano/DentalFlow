@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Header from './Header';
+import { useDialogos } from './ui/Dialogos';
 
 interface OpcionesCuentaProps {
   onBack: () => void;
@@ -39,6 +40,7 @@ type Styles = {
 };
 
 const OpcionesCuenta: React.FC<OpcionesCuentaProps> = ({ onBack }) => {
+  const { confirmarTexto, avisar } = useDialogos();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [configuracion, setConfiguracion] = useState<ConfiguracionLaboratorio>({
@@ -135,7 +137,7 @@ const OpcionesCuenta: React.FC<OpcionesCuentaProps> = ({ onBack }) => {
       await supabase.auth.signOut();
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
-      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+      avisar('Error al cerrar sesión. Por favor, intenta de nuevo.');
     } finally {
       setCerrandoSesion(false);
     }
@@ -562,8 +564,8 @@ const OpcionesCuenta: React.FC<OpcionesCuentaProps> = ({ onBack }) => {
     }
   };
 
-  const resetearConfiguracion = () => {
-    if (window.confirm('¿Estás seguro de que quieres resetear toda la configuración a los valores por defecto?')) {
+  const resetearConfiguracion = async () => {
+    if (await confirmarTexto('¿Estás seguro de que quieres resetear toda la configuración a los valores por defecto?')) {
       const configPorDefecto = {
         nombre_laboratorio: 'Laboratorio Dental Pro',
         rut: '76.123.456-7',

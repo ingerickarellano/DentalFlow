@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import Header from './Header';
 import { useMembresia } from '../hooks/useMembresia';
 import { useMediaQuery, BREAKPOINTS } from '../hooks/useMediaQuery';
+import { useDialogos } from './ui/Dialogos';
 
 // ============================================
 // GESTIÓN DE LABORATORISTAS (solo administrador del laboratorio)
@@ -59,6 +60,7 @@ const FORM_VACIO = {
 };
 
 const GestionLaboratoristas: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
+  const { confirmarTexto, avisar } = useDialogos();
   const navigate = useNavigate();
   const vistaTarjetas = useMediaQuery(BREAKPOINTS.tablet);
 
@@ -123,7 +125,7 @@ const GestionLaboratoristas: React.FC<{ onBack?: () => void }> = ({ onBack }) =>
   // ---------------- Crear ----------------
   const abrirNuevo = () => {
     if (!puedeCrear) {
-      alert('Tu plan está vencido: regulariza tu pago en Mi Membresía para agregar laboratoristas.');
+      avisar('Tu plan está vencido: regulariza tu pago en Mi Membresía para agregar laboratoristas.');
       return;
     }
     setForm(FORM_VACIO);
@@ -162,7 +164,7 @@ const GestionLaboratoristas: React.FC<{ onBack?: () => void }> = ({ onBack }) =>
         return;
       }
       setModalNuevo(false);
-      alert(`✅ Laboratorista creado. ${nombre} ya puede iniciar sesión con ${email} y la contraseña que definiste.`);
+      avisar(`✅ Laboratorista creado. ${nombre} ya puede iniciar sesión con ${email} y la contraseña que definiste.`);
       await cargar();
     } catch (e: any) {
       setErrorForm(e.message || 'No se pudo crear el laboratorista');
@@ -177,14 +179,14 @@ const GestionLaboratoristas: React.FC<{ onBack?: () => void }> = ({ onBack }) =>
     const detalle = lab.activo
       ? 'No podrá iniciar sesión ni ver información del laboratorio. Sus trabajos se conservan.'
       : 'Podrá volver a iniciar sesión.';
-    if (!window.confirm(`¿${accion} a ${lab.nombre}?\n\n${detalle}`)) return;
+    if (!await confirmarTexto(`¿${accion} a ${lab.nombre}?\n\n${detalle}`)) return;
 
     const { error: errorUpdate } = await supabase
       .from('laboratoristas')
       .update({ activo: !lab.activo, updated_at: new Date().toISOString() })
       .eq('id', lab.id);
     if (errorUpdate) {
-      alert(`Error: ${errorUpdate.message}`);
+      avisar(`Error: ${errorUpdate.message}`);
       return;
     }
     setLaboratoristas(prev => prev.map(l => (l.id === lab.id ? { ...l, activo: !lab.activo } : l)));
@@ -200,7 +202,7 @@ const GestionLaboratoristas: React.FC<{ onBack?: () => void }> = ({ onBack }) =>
       .eq('id', lab.id);
     if (errorUpdate) {
       setLaboratoristas(prev => prev.map(l => (l.id === lab.id ? { ...l, puede_despachar: !nuevo } : l)));
-      alert(`Error: ${errorUpdate.message}`);
+      avisar(`Error: ${errorUpdate.message}`);
     }
   };
 
@@ -229,7 +231,7 @@ const GestionLaboratoristas: React.FC<{ onBack?: () => void }> = ({ onBack }) =>
         setErrorPassword(await mensajeDeFuncion(errorFuncion));
         return;
       }
-      alert(`✅ Contraseña de ${modalPassword.nombre} actualizada.`);
+      avisar(`✅ Contraseña de ${modalPassword.nombre} actualizada.`);
       setModalPassword(null);
     } finally {
       setGuardando(false);

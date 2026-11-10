@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import Header from './Header';
 import { nombrePlan } from '../hooks/useMembresia';
 import { usePlanes, formatearCLP, mensajeBD } from '../hooks/usePlanes';
+import { useDialogos } from './ui/Dialogos';
 
 // ============================================
 // PANEL DE ADMINISTRACIÓN (solo super admin)
@@ -47,6 +48,7 @@ const situacion = (l: LabAdmin) =>
   l.estado === 'suspendido' ? 'suspendido' : l.vigente ? 'activo' : 'vencido';
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
+  const { confirmarTexto, avisar } = useDialogos();
   const navigate = useNavigate();
   const [usuario, setUsuario] = useState<any>(null);
   const [vista, setVista] = useState<'laboratorios' | 'planes'>('laboratorios');
@@ -99,49 +101,49 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
     const { error } = await supabase.rpc(fn, args);
     setProcesando(false);
     if (error) {
-      alert('❌ ' + mensajeBD(error, 'No se pudo completar la acción.'));
+      avisar('❌ ' + mensajeBD(error, 'No se pudo completar la acción.'));
       return false;
     }
-    alert('✅ ' + exito);
+    avisar('✅ ' + exito);
     await cargarLabs();
     return true;
   };
 
-  const cambiarPlan = (l: LabAdmin, plan: string) => {
+  const cambiarPlan = async (l: LabAdmin, plan: string) => {
     if (plan === l.plan) return;
-    if (!window.confirm(`¿Cambiar el plan de "${l.nombre}" de ${nombrePlan(l.plan)} a ${nombrePlan(plan)}?\n(El vencimiento no cambia.)`)) return;
+    if (!await confirmarTexto(`¿Cambiar el plan de "${l.nombre}" de ${nombrePlan(l.plan)} a ${nombrePlan(plan)}?\n(El vencimiento no cambia.)`)) return;
     ejecutar('admin_cambiar_plan', { p_lab: l.id, p_plan: plan }, `Plan cambiado a ${nombrePlan(plan)}.`);
   };
 
-  const extender = (l: LabAdmin) => {
-    if (!window.confirm(`¿Extender el plan de "${l.nombre}" por ${mesesExtender} ${mesesExtender === 1 ? 'mes' : 'meses'}?\n(Se suma desde el vencimiento actual, o desde hoy si ya venció.)`)) return;
+  const extender = async (l: LabAdmin) => {
+    if (!await confirmarTexto(`¿Extender el plan de "${l.nombre}" por ${mesesExtender} ${mesesExtender === 1 ? 'mes' : 'meses'}?\n(Se suma desde el vencimiento actual, o desde hoy si ya venció.)`)) return;
     ejecutar('admin_extender_plan', { p_lab: l.id, p_meses: mesesExtender }, 'Plan extendido.');
   };
 
-  const fijarFecha = (l: LabAdmin) => {
-    if (!nuevaFecha) { alert('Elige la nueva fecha de vencimiento.'); return; }
-    if (!window.confirm(`¿Fijar el vencimiento de "${l.nombre}" en ${fecha(nuevaFecha)}?`)) return;
+  const fijarFecha = async (l: LabAdmin) => {
+    if (!nuevaFecha) { avisar('Elige la nueva fecha de vencimiento.'); return; }
+    if (!await confirmarTexto(`¿Fijar el vencimiento de "${l.nombre}" en ${fecha(nuevaFecha)}?`)) return;
     ejecutar('admin_fijar_vencimiento', { p_lab: l.id, p_fecha: nuevaFecha }, 'Vencimiento actualizado.');
   };
 
-  const cambiarEstado = (l: LabAdmin) => {
+  const cambiarEstado = async (l: LabAdmin) => {
     const nuevo = l.estado === 'suspendido' ? 'activo' : 'suspendido';
     const texto = nuevo === 'suspendido'
       ? `¿Suspender "${l.nombre}"?\nQuedará en solo lectura: podrá ver su información y cerrar trabajos en curso, pero no crear nada nuevo.`
       : `¿Reactivar "${l.nombre}"?`;
-    if (!window.confirm(texto)) return;
+    if (!await confirmarTexto(texto)) return;
     ejecutar('admin_cambiar_estado', { p_lab: l.id, p_estado: nuevo }, nuevo === 'suspendido' ? 'Laboratorio suspendido.' : 'Laboratorio reactivado.');
   };
 
   const guardarPrecio = async (planId: string) => {
     const valor = Number(precios[planId]);
-    if (!valor || valor <= 0 || !Number.isInteger(valor)) { alert('El precio debe ser un monto entero mayor a 0.'); return; }
-    if (!window.confirm(`¿Cambiar el precio del plan ${nombrePlan(planId)} a ${formatearCLP(valor)} al mes?\nSe mostrará a los laboratorios desde ahora; los pagos ya informados no cambian.`)) return;
+    if (!valor || valor <= 0 || !Number.isInteger(valor)) { avisar('El precio debe ser un monto entero mayor a 0.'); return; }
+    if (!await confirmarTexto(`¿Cambiar el precio del plan ${nombrePlan(planId)} a ${formatearCLP(valor)} al mes?\nSe mostrará a los laboratorios desde ahora; los pagos ya informados no cambian.`)) return;
     setProcesando(true);
     const { error } = await supabase.rpc('admin_actualizar_precio_plan', { p_plan: planId, p_precio: valor });
     setProcesando(false);
-    if (error) { alert('❌ ' + mensajeBD(error, 'No se pudo cambiar el precio.')); return; }
-    alert('✅ Precio actualizado.');
+    if (error) { avisar('❌ ' + mensajeBD(error, 'No se pudo cambiar el precio.')); return; }
+    avisar('✅ Precio actualizado.');
     recargarPlanes();
   };
 

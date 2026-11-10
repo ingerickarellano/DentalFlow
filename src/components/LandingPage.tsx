@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usePlanes, formatearCLP } from '../hooks/usePlanes';
+import { useDialogos } from './ui/Dialogos';
 
 const LandingPage: React.FC = () => {
+  const { avisar } = useDialogos();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -420,7 +423,15 @@ const LandingPage: React.FC = () => {
     }
   ];
 
-  // NUEVOS PLANES CON PRECIOS EN PESOS CHILENOS
+  // Precios vigentes desde la tabla "planes" (los cambia el super admin en el Panel).
+  // Mientras cargan, se muestran los valores de referencia.
+  const { plan: datosPlan } = usePlanes();
+  const precioProfesional = datosPlan('profesional')?.precio_mensual ?? 8000;
+  const precioEnterprise = datosPlan('enterprise')?.precio_mensual ?? 16000;
+  const limiteTrabajosGratis = datosPlan('gratuito')?.limite_trabajos_mes ?? 10;
+  const limiteClinicasGratis = datosPlan('gratuito')?.limite_clinicas ?? 3;
+
+  // PLANES CON PRECIOS EN PESOS CHILENOS
   const plans = [
     {
       id: 'gratuita',
@@ -428,8 +439,8 @@ const LandingPage: React.FC = () => {
       price: 0,
       period: '30 días',
       features: [
-        'Hasta 3 clínicas',
-        'Hasta 10 trabajos/mes',
+        `Hasta ${limiteClinicasGratis} clínicas`,
+        `Hasta ${limiteTrabajosGratis} trabajos/mes`,
         'Soporte por email',
         'Reportes básicos',
         'App web completa'
@@ -441,7 +452,7 @@ const LandingPage: React.FC = () => {
     {
       id: 'profesional',
       name: 'Plan Profesional',
-      price: 8000,
+      price: precioProfesional,
       period: 'por mes',
       features: [
         'Clínicas ilimitadas',
@@ -460,7 +471,7 @@ const LandingPage: React.FC = () => {
     {
       id: 'empresarial',
       name: 'Plan Empresarial',
-      price: 16000,
+      price: precioEnterprise,
       period: 'por mes',
       features: [
         'Todo del plan Profesional',
@@ -509,10 +520,10 @@ const LandingPage: React.FC = () => {
 
   const handleDemoRequest = () => {
     if (email) {
-      alert(`¡Gracias! Te contactaremos pronto al email: ${email} para coordinar tu demo.`);
+      avisar(`¡Gracias! Te contactaremos pronto al email: ${email} para coordinar tu demo.`);
       setEmail('');
     } else {
-      alert('Por favor ingresa tu email para solicitar el demo.');
+      avisar('Por favor ingresa tu email para solicitar el demo.');
     }
   };
 
@@ -568,7 +579,7 @@ const LandingPage: React.FC = () => {
         <h1 style={styles.heroTitle}>
           Gestión profesional para<br />
           <span style={{ color: '#3b82f6' }}>laboratorios dentales</span><br />
-          desde <span style={{ color: '#3b82f6', fontSize: '4rem' }}>$8.000</span>/mes
+          desde <span style={{ color: '#3b82f6', fontSize: '4rem' }}>{formatearCLP(precioProfesional)}</span>/mes
         </h1>
         <p style={styles.heroSubtitle}>
           Optimiza tu workflow, aumenta tu productividad y haz crecer tu laboratorio 
@@ -657,7 +668,7 @@ const LandingPage: React.FC = () => {
           <div style={styles.comparisonRow}>
             <div style={styles.comparisonCell}>Precio mensual</div>
             <div style={styles.comparisonCell}>USD $49 – $99</div>
-            <div style={styles.comparisonCell}><strong style={{ color: '#3b82f6' }}>$8.000 – $16.000 CLP</strong></div>
+            <div style={styles.comparisonCell}><strong style={{ color: '#3b82f6' }}>{formatearCLP(precioProfesional)} – {formatearCLP(precioEnterprise)} CLP</strong></div>
           </div>
           <div style={styles.comparisonRow}>
             <div style={styles.comparisonCell}>Soporte en español</div>
@@ -857,8 +868,8 @@ const LandingPage: React.FC = () => {
                 <p><strong>Razón Social:</strong> DentalFlow SpA</p>
                 <p><strong>Email para aviso:</strong> DentalflowM@gmail.com</p>
                 <p><strong>Monto:</strong> 
-                  {selectedPlan === 'profesional' ? ' $8.000 CLP/mes' : 
-                   selectedPlan === 'empresarial' ? ' $16.000 CLP/mes' : ' $0'}
+                  {selectedPlan === 'profesional' ? ` ${formatearCLP(precioProfesional)} CLP/mes` :
+                   selectedPlan === 'empresarial' ? ` ${formatearCLP(precioEnterprise)} CLP/mes` : ' $0'}
                 </p>
               </div>
             </div>

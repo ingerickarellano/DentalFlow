@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMembresia, nombrePlan } from '../hooks/useMembresia';
 import { usePlanes, formatearCLP, mensajeBD } from '../hooks/usePlanes';
 import Header from './Header';
+import { useDialogos } from './ui/Dialogos';
 
 // ============================================
 // MI MEMBRESÍA (admin del laboratorio)
@@ -40,6 +41,7 @@ const fechaCorta = (f: string | null) =>
   f ? new Date(f.length === 10 ? `${f}T12:00:00` : f).toLocaleDateString('es-CL') : '-';
 
 const MiMembresia: React.FC = () => {
+  const { confirmarTexto, avisar } = useDialogos();
   const navigate = useNavigate();
   const [user, setUser] = useState<any>(null);
   const [cargandoUser, setCargandoUser] = useState(true);
@@ -102,14 +104,14 @@ const MiMembresia: React.FC = () => {
 
   const handleLogout = async () => {
     if (cerrandoSesion) return;
-    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
+    if (!await confirmarTexto('¿Estás seguro de que quieres cerrar sesión?')) return;
     try {
       setCerrandoSesion(true);
       await supabase.auth.signOut();
       navigate('/', { replace: true });
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
-      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+      avisar('Error al cerrar sesión. Por favor, intenta de nuevo.');
     } finally {
       setCerrandoSesion(false);
     }
@@ -198,7 +200,7 @@ const MiMembresia: React.FC = () => {
     const { data, error } = await supabase.storage.from('pagos').createSignedUrl(ruta, 300);
     if (error || !data?.signedUrl) {
       ventana?.close();
-      alert('No se pudo abrir el comprobante.');
+      avisar('No se pudo abrir el comprobante.');
       return;
     }
     if (ventana) ventana.location.href = data.signedUrl;

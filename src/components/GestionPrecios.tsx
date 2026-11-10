@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import Header from './Header';
+import { useDialogos } from './ui/Dialogos';
 
 interface GestionPreciosProps {
   onBack?: () => void;
@@ -135,6 +136,7 @@ const extraerAnioYCategoria = (texto: string): { anio: number; categoria: string
 };
 
 const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
+  const { confirmarTexto, avisar } = useDialogos();
   const navigate = useNavigate();
   const [servicios, setServicios] = useState<Servicio[]>([]);
   const [mostrarModal, setMostrarModal] = useState(false);
@@ -194,7 +196,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
       await supabase.auth.signOut();
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
-      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+      avisar('Error al cerrar sesión. Por favor, intenta de nuevo.');
     } finally {
       setCerrandoSesion(false);
     }
@@ -328,7 +330,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
   };
 
   const eliminarServicio = async (servicio: Servicio) => {
-    if (!window.confirm(`¿Estás seguro de que quieres eliminar el servicio "${servicio.nombre}"?`)) {
+    if (!await confirmarTexto(`¿Estás seguro de que quieres eliminar el servicio "${servicio.nombre}"?`)) {
       return;
     }
     try {
@@ -466,7 +468,7 @@ const GestionPrecios: React.FC<GestionPreciosProps> = ({ onBack }) => {
         .from('servicios')
         .insert(serviciosParaInsertar);
       if (error) throw error;
-      alert(`✅ ${serviciosParaInsertar.length} servicios cargados correctamente`);
+      avisar(`✅ ${serviciosParaInsertar.length} servicios cargados correctamente`);
       await cargarServicios();
       setMostrarModalExcel(false);
       setArchivoExcel(null);

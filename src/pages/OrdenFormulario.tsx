@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
 import { QRCodeSVG } from 'qrcode.react';
+import { useDialogos } from '../components/ui/Dialogos';
 
 // Tipos para superficies y piezas dentales
 type Superficie = 'oclusal' | 'mesial' | 'distal' | 'vestibular' | 'lingual';
@@ -78,6 +79,7 @@ const crearPiezaVacia = (): PiezaDental => ({
 });
 
 const OrdenFormulario: React.FC = () => {
+  const { avisar } = useDialogos();
   const navigate = useNavigate();
   const { id } = useParams();
   const [cargando, setCargando] = useState(false);
@@ -276,7 +278,7 @@ const OrdenFormulario: React.FC = () => {
       }
     } catch (error) {
       console.error('Error cargando orden:', error);
-      alert('Error al cargar la orden');
+      avisar('Error al cargar la orden');
     }
   };
 
@@ -343,7 +345,7 @@ const OrdenFormulario: React.FC = () => {
       p_notas: formData.notas ?? ''
     });
     if (error) throw new Error(String(error.message || '').replace(/^[A-Z_]+:\s*/, ''));
-    alert('✅ Orden guardada correctamente');
+    avisar('✅ Orden guardada correctamente');
     navigate('/ordenes');
   };
 
@@ -383,6 +385,8 @@ const OrdenFormulario: React.FC = () => {
         const datosTrabajoEditables: Record<string, any> = { ...trabajoData };
         delete datosTrabajoEditables.servicios;
         delete datosTrabajoEditables.precio_total;
+        // ...ni la fecha de creación (el trabajo no se está creando ahora); el estado sí vuelve a pendiente
+        delete datosTrabajoEditables.fecha_creacion;
         const { error } = await supabase
           .from('trabajos')
           .update(datosTrabajoEditables)
@@ -421,11 +425,11 @@ const OrdenFormulario: React.FC = () => {
         if (error) throw error;
       }
 
-      alert('✅ Orden guardada correctamente');
+      avisar('✅ Orden guardada correctamente');
       navigate('/ordenes');
     } catch (error: any) {
       console.error('Error detallado:', error);
-      alert('❌ Error al guardar: ' + error.message);
+      avisar('❌ Error al guardar: ' + error.message);
     } finally {
       setCargando(false);
     }

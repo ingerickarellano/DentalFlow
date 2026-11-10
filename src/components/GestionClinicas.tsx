@@ -5,6 +5,7 @@ import Header from '../components/Header';
 import { useMembresia } from '../hooks/useMembresia';
 import { useMediaQuery, BREAKPOINTS } from '../hooks/useMediaQuery';
 import { normalizarRut, validarRut, formatearRut } from '../utils/rut';
+import { useDialogos } from './ui/Dialogos';
 
 interface GestionClinicasProps {
   onBack?: () => void;
@@ -33,6 +34,7 @@ interface Dentista {
 }
 
 const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
+  const { confirmarTexto, avisar } = useDialogos();
   const navigate = useNavigate();
   const [clinicas, setClinicas] = useState<Clinica[]>([]);
   const [dentistas, setDentistas] = useState<Dentista[]>([]);
@@ -71,7 +73,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        alert('No hay usuario autenticado');
+        avisar('No hay usuario autenticado');
         navigate('/login');
         return;
       }
@@ -97,7 +99,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
     } catch (error: any) {
       console.error('Error cargando datos:', error);
-      alert(`Error al cargar los datos: ${error.message}`);
+      avisar(`Error al cargar los datos: ${error.message}`);
     } finally {
       setCargando(false);
     }
@@ -155,7 +157,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       });
     } else {
       if (!puedeCrearClinica) {
-        alert(mensajeLimite || 'No puedes crear más clínicas en este plan.');
+        avisar(mensajeLimite || 'No puedes crear más clínicas en este plan.');
         return;
       }
       setClinicaEditando(null);
@@ -175,7 +177,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
   const abrirModalDentista = (clinicaId: string) => {
     const clinica = clinicas.find(c => c.id === clinicaId);
     if (!clinica) {
-      alert('Clínica no encontrada');
+      avisar('Clínica no encontrada');
       return;
     }
 
@@ -198,7 +200,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     e.preventDefault();
 
     if (!formDataClinica.nombre.trim()) {
-      alert('El nombre de la clínica es requerido');
+      avisar('El nombre de la clínica es requerido');
       return;
     }
 
@@ -214,7 +216,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        alert('No hay usuario autenticado');
+        avisar('No hay usuario autenticado');
         return;
       }
 
@@ -243,7 +245,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
           c.id === clinicaEditando.id ? { ...c, ...clinicaDataForSupabase, id: c.id } : c
         ));
 
-        alert('✅ Clínica actualizada exitosamente');
+        avisar('✅ Clínica actualizada exitosamente');
       } else {
         const { data, error } = await supabase
           .from('clinicas')
@@ -254,7 +256,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
         if (data && data.length > 0) {
           setClinicas(prev => [data[0], ...prev]);
-          alert('✅ Clínica creada exitosamente');
+          avisar('✅ Clínica creada exitosamente');
         }
       }
 
@@ -267,7 +269,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       } else if (error?.code === '23514') {
         setErrorRut('RUT inválido. Revisa el número y el dígito verificador.');
       } else {
-        alert(`Error al guardar la clínica: ${mensajeError(error)}`);
+        avisar(`Error al guardar la clínica: ${mensajeError(error)}`);
       }
     } finally {
       setCargando(false);
@@ -278,12 +280,12 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
     e.preventDefault();
 
     if (!formDataDentista.nombre.trim() || !formDataDentista.especialidad.trim()) {
-      alert('El nombre y especialidad del dentista son requeridos');
+      avisar('El nombre y especialidad del dentista son requeridos');
       return;
     }
 
     if (!clinicaSeleccionada) {
-      alert('No se ha seleccionado una clínica');
+      avisar('No se ha seleccionado una clínica');
       return;
     }
 
@@ -292,7 +294,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        alert('No hay usuario autenticado');
+        avisar('No hay usuario autenticado');
         return;
       }
 
@@ -313,19 +315,19 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       if (data && data.length > 0) {
         setDentistas(prev => [data[0], ...prev]);
         cerrarModales();
-        alert('✅ Dentista agregado exitosamente');
+        avisar('✅ Dentista agregado exitosamente');
       }
 
     } catch (error: any) {
       console.error('Error guardando dentista:', error);
-      alert(`Error al guardar el dentista: ${mensajeError(error)}`);
+      avisar(`Error al guardar el dentista: ${mensajeError(error)}`);
     } finally {
       setCargando(false);
     }
   };
 
   const eliminarClinica = async (clinica: Clinica) => {
-    if (!window.confirm(`¿Estás seguro de que quieres eliminar la clínica "${clinica.nombre}"? Esta acción no se puede deshacer.`)) {
+    if (!await confirmarTexto(`¿Estás seguro de que quieres eliminar la clínica "${clinica.nombre}"? Esta acción no se puede deshacer.`)) {
       return;
     }
 
@@ -348,16 +350,16 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
 
       setClinicas(prev => prev.filter(c => c.id !== clinica.id));
       setDentistas(prev => prev.filter(d => d.clinica_id !== clinica.id));
-      alert('✅ Clínica eliminada exitosamente');
+      avisar('✅ Clínica eliminada exitosamente');
 
     } catch (error: any) {
       console.error('Error eliminando clínica:', error);
-      alert(`Error al eliminar la clínica: ${error.message}`);
+      avisar(`Error al eliminar la clínica: ${error.message}`);
     }
   };
 
   const eliminarDentista = async (dentista: Dentista) => {
-    if (!window.confirm(`¿Estás seguro de que quieres eliminar al dentista "${dentista.nombre}"?`)) {
+    if (!await confirmarTexto(`¿Estás seguro de que quieres eliminar al dentista "${dentista.nombre}"?`)) {
       return;
     }
 
@@ -378,11 +380,11 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
       }
 
       setDentistas(prev => prev.filter(d => d.id !== dentista.id));
-      alert('✅ Dentista eliminado exitosamente');
+      avisar('✅ Dentista eliminado exitosamente');
 
     } catch (error: any) {
       console.error('Error eliminando dentista:', error);
-      alert(`Error al eliminar el dentista: ${error.message}`);
+      avisar(`Error al eliminar el dentista: ${error.message}`);
     }
   };
 
@@ -412,7 +414,7 @@ const GestionClinicas: React.FC<GestionClinicasProps> = ({ onBack }) => {
   // Función para copiar ID al portapapeles
   const copiarID = (id: string, tipo: string) => {
     navigator.clipboard.writeText(id);
-    alert(`✅ ID de ${tipo} copiado al portapapeles`);
+    avisar(`✅ ID de ${tipo} copiado al portapapeles`);
   };
 
   const styles: { [key: string]: React.CSSProperties } = {

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMediaQuery, BREAKPOINTS } from '../hooks/useMediaQuery';
+import { useDialogos } from './ui/Dialogos';
 
 interface HeaderProps {
   user?: {
@@ -32,6 +33,7 @@ const Header: React.FC<HeaderProps> = ({
   title = '',
   showTitle = false
 }) => {
+  const { confirmarTexto, avisar } = useDialogos();
   const navigate = useNavigate();
   const esMovil = useMediaQuery(BREAKPOINTS.movil);
   const esTablet = useMediaQuery(BREAKPOINTS.tablet);
@@ -59,7 +61,7 @@ const Header: React.FC<HeaderProps> = ({
   // ============================================
   const handleLogout = async () => {
     if (cerrandoSesion) return;
-    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
+    if (!await confirmarTexto('¿Estás seguro de que quieres cerrar sesión?')) return;
 
     try {
       // Indicar que estamos cerrando sesión
@@ -77,7 +79,7 @@ const Header: React.FC<HeaderProps> = ({
 
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
-      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+      avisar('Error al cerrar sesión. Por favor, intenta de nuevo.');
     }
   };
 

@@ -32,14 +32,61 @@ interface Aviso {
 
 interface ContextoDialogos {
   confirmar: (opciones: OpcionesConfirmar) => Promise<boolean>;
+  // Atajo para textos simples: la primera línea es el título y el resto el mensaje.
+  // Las acciones destructivas (eliminar, borrar, desactivar...) salen con botón rojo.
+  confirmarTexto: (texto: string, opciones?: Partial<OpcionesConfirmar>) => Promise<boolean>;
   avisar: (texto: string, tipo?: TipoAviso) => void;
 }
+
+const PALABRAS_PELIGRO = /eliminar|borrar|desactivar|suspender|rechazar|resetear|restablecer|cerrar sesi[oó]n|no se puede deshacer/i;
+
+// Texto del botón según la acción que se confirma
+const textoBoton = (texto: string): string => {
+  const t = texto.toLowerCase();
+  if (t.includes('cerrar sesi')) return 'Cerrar sesión';
+  if (t.includes('eliminar') || t.includes('borrar')) return 'Eliminar';
+  if (t.includes('desactivar')) return 'Desactivar';
+  if (t.includes('reactivar')) return 'Reactivar';
+  if (t.includes('activar')) return 'Activar';
+  if (t.includes('suspender')) return 'Suspender';
+  if (t.includes('aprobar')) return 'Aprobar';
+  if (t.includes('limpiar')) return 'Limpiar';
+  if (t.includes('resetear') || t.includes('restablecer')) return 'Restablecer';
+  if (t.includes('cambiar')) return 'Cambiar';
+  if (t.includes('extender')) return 'Extender';
+  return 'Aceptar';
+};
+
+const separarTexto = (texto: string, opciones?: Partial<OpcionesConfirmar>): OpcionesConfirmar => {
+  const limpio = texto.replace(/^\s*(✅|❌|⚠️|ℹ️)\s*/u, '').trim();
+  let [primera, ...resto] = limpio.split('\n');
+  // "¿Eliminar X? Esta acción no se puede deshacer." → título hasta el "?", el resto como mensaje
+  const corte = primera.indexOf('? ');
+  if (corte > 0 && corte < primera.length - 2) {
+    resto = [primera.slice(corte + 2), ...resto];
+    primera = primera.slice(0, corte + 1);
+  }
+  return {
+    titulo: primera.trim(),
+    mensaje: resto.join('\n').trim() || undefined,
+    peligro: PALABRAS_PELIGRO.test(limpio),
+    textoConfirmar: textoBoton(limpio),
+    ...opciones
+  };
+};
+
+// Tipo del aviso según su texto, para los mensajes que no lo indican
+const tipoDeTexto = (texto: string): TipoAviso =>
+  /^\s*❌/u.test(texto) || /\berror\b|no se pudo|no se encontr|bloque[oó]/i.test(texto) ? 'error'
+  : /^\s*✅/u.test(texto) ? 'exito'
+  : 'info';
 
 const Contexto = createContext<ContextoDialogos | null>(null);
 
 // Si algún componente se usa fuera del proveedor, cae en los diálogos del navegador
 const respaldo: ContextoDialogos = {
   confirmar: async (o) => window.confirm([o.titulo, typeof o.mensaje === 'string' ? o.mensaje : ''].filter(Boolean).join('\n\n')),
+  confirmarTexto: async (t) => window.confirm(t),
   avisar: (t) => window.alert(t)
 };
 
@@ -57,10 +104,13 @@ export const DialogosProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const confirmar = useCallback((opciones: OpcionesConfirmar) =>
     new Promise<boolean>(resolver => setPendiente({ ...opciones, resolver })), []);
 
+  const confirmarTexto = useCallback((texto: string, opciones?: Partial<OpcionesConfirmar>) =>
+    confirmar(separarTexto(texto, opciones)), [confirmar]);
+
   const cerrarAviso = useCallback((id: number) => setAvisos(prev => prev.filter(a => a.id !== id)), []);
 
   const avisar = useCallback((texto: string, tipo?: TipoAviso) => {
-    const t: TipoAviso = tipo || (/^\s*❌/u.test(texto) ? 'error' : /^\s*✅/u.test(texto) ? 'exito' : 'info');
+    const t: TipoAviso = tipo || tipoDeTexto(texto);
     const id = siguienteId.current++;
     setAvisos(prev => [...prev.slice(-3), { id, texto: limpiar(texto), tipo: t }]);
     if (t !== 'error') setTimeout(() => cerrarAviso(id), 4000);
@@ -90,7 +140,7 @@ export const DialogosProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   return (
-    <Contexto.Provider value={{ confirmar, avisar }}>
+    <Contexto.Provider value={{ confirmar, confirmarTexto, avisar }}>
       {children}
 
       {pendiente && (
