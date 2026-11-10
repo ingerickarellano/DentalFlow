@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import Header from './Header';
+import { useDialogos } from './ui/Dialogos';
 
 interface ReportesProps {
   onBack: () => void;
@@ -97,6 +98,7 @@ const LOGO_DENTAL_GENERICO = `<svg class="logo" width="64" height="64" viewBox="
 </svg>`;
 
 const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
+  const { confirmarTexto, avisar } = useDialogos();
   const [filtros, setFiltros] = useState<FiltrosReporte>({
     clinicaId: 'todos',
     periodo: 'mes',
@@ -129,7 +131,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       setCargando(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        alert('No hay usuario autenticado');
+        avisar('No hay usuario autenticado');
         return;
       }
 
@@ -185,7 +187,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       setNombreLaboratorioRegistro(filaMembresia?.laboratorio || '');
     } catch (error: any) {
       console.error('Error cargando datos:', error);
-      alert(`Error al cargar los datos: ${error.message}`);
+      avisar(`Error al cargar los datos: ${error.message}`);
     } finally {
       setCargando(false);
     }
@@ -197,7 +199,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       await supabase.auth.signOut();
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
-      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+      avisar('Error al cerrar sesión. Por favor, intenta de nuevo.');
     } finally {
       setCerrandoSesion(false);
     }
@@ -236,10 +238,10 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
         t.id === trabajoId ? { ...t, estado: nuevoEstado as Trabajo['estado'] } : t
       ));
 
-      alert('✅ Estado actualizado correctamente');
+      avisar('✅ Estado actualizado correctamente');
     } catch (error: any) {
       console.error('Error actualizando estado:', error);
-      alert('❌ Error al actualizar el estado');
+      avisar('❌ Error al actualizar el estado');
     } finally {
       setActualizandoEstado(null);
     }
@@ -248,13 +250,13 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
   // Función para actualizar todos los trabajos filtrados a un estado elegido
   const actualizarTodosEstado = async () => {
     if (trabajosFiltrados.length === 0) {
-      alert('No hay trabajos en los filtros actuales.');
+      avisar('No hay trabajos en los filtros actuales.');
       return;
     }
 
     const count = trabajosFiltrados.length;
     const estadoTexto = obtenerTextoEstado(estadoMasivo);
-    if (!window.confirm(`¿Estás seguro de marcar TODOS los ${count} trabajos filtrados como "${estadoTexto}"? Esta acción no se puede deshacer.`)) {
+    if (!await confirmarTexto(`¿Estás seguro de marcar TODOS los ${count} trabajos filtrados como "${estadoTexto}"? Esta acción no se puede deshacer.`)) {
       return;
     }
 
@@ -269,10 +271,10 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       if (error) throw error;
 
       setTrabajos(prev => prev.map(t => ids.includes(t.id) ? { ...t, estado: estadoMasivo } : t));
-      alert(`✅ ${count} trabajos marcados como "${estadoTexto}".`);
+      avisar(`✅ ${count} trabajos marcados como "${estadoTexto}".`);
     } catch (error: any) {
       console.error('Error actualizando estado masivo:', error);
-      alert(`❌ Error: ${error.message}`);
+      avisar(`❌ Error: ${error.message}`);
     } finally {
       setBulkUpdating(false);
     }
@@ -424,7 +426,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
 
     const ventana = window.open('', '_blank');
     if (!ventana) {
-      alert('El navegador bloqueó la ventana emergente. Permite ventanas emergentes e intenta de nuevo.');
+      avisar('El navegador bloqueó la ventana emergente. Permite ventanas emergentes e intenta de nuevo.');
       return;
     }
 
@@ -739,7 +741,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
     link.click();
     document.body.removeChild(link);
 
-    alert('📈 Reporte exportado exitosamente en formato Excel/CSV');
+    avisar('📈 Reporte exportado exitosamente en formato Excel/CSV');
   };
 
   const obtenerTextoEstado = (estado: string) => {

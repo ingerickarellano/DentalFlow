@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
+import { useDialogos } from '../components/ui/Dialogos';
 
 const OrdenesLista: React.FC = () => {
+  const { avisar } = useDialogos();
   const navigate = useNavigate();
   const [ordenes, setOrdenes] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -71,7 +73,7 @@ const OrdenesLista: React.FC = () => {
       setOrdenes(data || []);
     } catch (error) {
       console.error('Error cargando órdenes:', error);
-      alert('Error al cargar las órdenes. Revisa la consola.');
+      avisar('Error al cargar las órdenes. Revisa la consola.');
     } finally {
       setCargando(false);
     }
@@ -110,7 +112,7 @@ const OrdenesLista: React.FC = () => {
 
       const ventana = window.open('', '_blank');
       if (!ventana) {
-        alert('El navegador bloqueó la ventana emergente.');
+        avisar('El navegador bloqueó la ventana emergente.');
         return;
       }
 
@@ -119,7 +121,7 @@ const OrdenesLista: React.FC = () => {
       ventana.document.close();
     } catch (error) {
       console.error('Error al imprimir:', error);
-      alert('Error al generar la vista de impresión');
+      avisar('Error al generar la vista de impresión');
     }
   };
 

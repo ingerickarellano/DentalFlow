@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
+import { useDialogos } from './ui/Dialogos';
+import { useMediaQuery, BREAKPOINTS } from '../hooks/useMediaQuery';
 
 // Interfaces
 interface CrearTrabajoProps {
@@ -79,6 +81,9 @@ interface ConfiguracionDetallada {
   toothColor: string;
 }
 
+// Categoría especial: prestaciones más usadas en la clínica elegida
+const CATEGORIA_MAS_USADAS = 'mas_usadas';
+
 const categorias = {
   'todos': '📋 Todos',
   'fija': '🦷 Prótesis Fija',
@@ -118,6 +123,9 @@ interface HistorialServicio {
 }
 
 const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
+  const { confirmarTexto, avisar } = useDialogos();
+  const esCompacto = useMediaQuery(BREAKPOINTS.tablet);  // tablet y celular: una columna
+  const esMovil = useMediaQuery(BREAKPOINTS.movil);
   // Estados
   const [clinicas, setClinicas] = useState<ClinicaSupabase[]>([]);
   const [dentistas, setDentistas] = useState<DentistaSupabase[]>([]);
@@ -144,9 +152,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [terminoBusqueda, setTerminoBusqueda] = useState<string>('');
   const [cargandoDatos, setCargandoDatos] = useState<boolean>(true);
   const [notasServicios, setNotasServicios] = useState<{ [key: string]: string }>({});
-  const [showFloatingCounter, setShowFloatingCounter] = useState(false);
   const [fechaTrabajo, setFechaTrabajo] = useState<string>('');
-  const [mostrarHistorial, setMostrarHistorial] = useState<boolean>(false);
   const [historialServicios, setHistorialServicios] = useState<HistorialServicio[]>([]);
   const [cargandoHistorial, setCargandoHistorial] = useState<boolean>(false);
   const [user, setUser] = useState<any>(null);
@@ -169,14 +175,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     toothColor: 'A2'
   });
 
-  const inicioRef = useRef<HTMLDivElement>(null);
   const terminoBusquedaDebounced = useDebounce(terminoBusqueda, 300);
 
   // Efectos
-  useEffect(() => {
-    setShowFloatingCounter(trabajosAgregados.length > 0);
-  }, [trabajosAgregados.length]);
-
   useEffect(() => {
     const hoy = new Date();
     const mes = String(hoy.getMonth() + 1).padStart(2, '0');
@@ -185,7 +186,13 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   }, []);
 
   useEffect(() => {
-    if (clinicaSeleccionada) cargarHistorialServicios();
+    if (clinicaSeleccionada) {
+      cargarHistorialServicios();
+    } else {
+      // Sin clínica no hay "más usadas"
+      setHistorialServicios([]);
+      setCategoriaSeleccionada(prev => (prev === CATEGORIA_MAS_USADAS ? 'todos' : prev));
+    }
   }, [clinicaSeleccionada]);
 
   useEffect(() => {
@@ -338,12 +345,18 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     if (servicios.length === 0) return [];
     let filtrados = servicios;
 
-    if (categoriaSeleccionada !== 'todos') {
-      filtrados = filtrados.filter(s => s.categoria === categoriaSeleccionada);
+    if (categoriaSeleccionada === CATEGORIA_MAS_USADAS) {
+      // Más usadas en la clínica elegida, en orden de uso (solo las que siguen en el catálogo)
+      filtrados = historialServicios
+        .map(h => servicios.find(s => s.id === h.servicio_id))
+        .filter((s): s is ServicioSupabase => !!s);
+    } else {
+      if (categoriaSeleccionada !== 'todos') {
+        filtrados = filtrados.filter(s => s.categoria === categoriaSeleccionada);
+      }
+      // 🔥 Filtro por año
+      filtrados = filtrados.filter(s => s.anio === filtroAnio);
     }
-
-    // 🔥 Filtro por año
-    filtrados = filtrados.filter(s => s.anio === filtroAnio);
 
     if (terminoBusquedaDebounced.trim()) {
       const terminoNormalizado = normalizarTexto(terminoBusquedaDebounced);
@@ -356,7 +369,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       });
     }
     return filtrados;
-  }, [servicios, categoriaSeleccionada, filtroAnio, terminoBusquedaDebounced]);
+  }, [servicios, categoriaSeleccionada, filtroAnio, terminoBusquedaDebounced, historialServicios]);
 
   const dentistasFiltrados = useMemo(() => {
     if (!clinicaSeleccionada) return dentistas;
@@ -412,27 +425,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     setTimeout(() => setAgregando(false), 300);
   };
 
-  const agregarDesdeHistorial = (servicioHistorial: HistorialServicio) => {
-    const servicioCompleto = servicios.find(s => s.id === servicioHistorial.servicio_id);
-    if (servicioCompleto) {
-      agregarTrabajoSimple(servicioCompleto);
-    } else {
-      const servicioTemporal: ServicioSupabase = {
-        id: servicioHistorial.servicio_id,
-        nombre: servicioHistorial.servicio_nombre,
-        categoria: servicioHistorial.categoria,
-        precio_base: 0,
-        anio: filtroAnio, // usamos el año actual del filtro
-        activo: true,
-        usuario_id: '',
-        creado_en: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        created_at: new Date().toISOString()
-      };
-      agregarTrabajoSimple(servicioTemporal);
-    }
-  };
-
   const eliminarTrabajo = (id: string) => {
     setTrabajosAgregados(prev => prev.filter(t => t.id !== id));
   };
@@ -445,17 +437,17 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     if (guardando) return;
     setGuardando(true);
     if (!clinicaSeleccionada) {
-      alert(idioma === 'es' ? 'Selecciona una clínica' : 'Select a clinic');
+      avisar(idioma === 'es' ? 'Selecciona una clínica' : 'Select a clinic');
       setGuardando(false);
       return;
     }
     if (trabajosAgregados.length === 0) {
-      alert(idioma === 'es' ? 'Agrega al menos un trabajo' : 'Add at least one work');
+      avisar(idioma === 'es' ? 'Agrega al menos un trabajo' : 'Add at least one work');
       setGuardando(false);
       return;
     }
     if (!fechaTrabajo) {
-      alert(idioma === 'es' ? 'Selecciona un mes' : 'Select a month');
+      avisar(idioma === 'es' ? 'Selecciona un mes' : 'Select a month');
       setGuardando(false);
       return;
     }
@@ -509,13 +501,13 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         const { error } = await supabase.from('trabajos').insert(trabajoData);
         if (error) throw error;
       }
-      alert(idioma === 'es' ? 'Trabajo guardado exitosamente' : 'Work saved successfully');
+      avisar(idioma === 'es' ? 'Trabajo guardado exitosamente' : 'Work saved successfully');
       reiniciarFormulario();
     } catch (error: any) {
       console.error('Error finalizar:', error);
       // Mensajes de la base de datos vienen con un código delante (PLAN_VENCIDO: ...)
       const mensaje = String(error?.message || '').replace(/^[A-Z_]+:\s*/, '');
-      alert(`Error: ${mensaje}`);
+      avisar(`Error: ${mensaje}`);
     } finally {
       setGuardando(false);
     }
@@ -554,10 +546,21 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   };
 
   // Botón manual "Limpiar trabajo": pide confirmación antes de borrar.
-  const limpiarTodo = () => {
-    if (window.confirm(idioma === 'es' ? '¿Limpiar todo?' : 'Clear all?')) {
-      reiniciarFormulario();
-    }
+  // "Limpiar trabajo": borra la información del trabajo y los trabajos agregados
+  // (el catálogo, la búsqueda y el modo quedan como están).
+  const limpiarTodo = async () => {
+    const ok = await confirmarTexto(idioma === 'es'
+      ? '¿Limpiar el trabajo?\nSe borrarán la información del trabajo y los trabajos agregados.'
+      : 'Clear the work?', { textoConfirmar: idioma === 'es' ? 'Limpiar' : 'Clear', peligro: true });
+    if (!ok) return;
+    setClinicaSeleccionada('');
+    setDentistaSeleccionado('');
+    setLaboratoristaSeleccionado(esLaboratorista ? miFichaLaboratorista : '');
+    setNombrePaciente('');
+    setRutPaciente('');
+    setTrabajosAgregados([]);
+    if (categoriaSeleccionada === CATEGORIA_MAS_USADAS) setCategoriaSeleccionada('todos');
+    restablecerMesActual();
   };
 
   // Reinicia el formulario sin preguntar (se usa después de guardar con éxito).
@@ -579,19 +582,17 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
       minimalThickness: 0.5, gapWidthCement: 0.1, orsStockAbstinent: false,
       selectedMaterials: [], materialType: 'Zirconia', toothColor: 'A2'
     });
-    setShowFloatingCounter(false);
-    setMostrarHistorial(false);
     const hoy = new Date();
     setFechaTrabajo(`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`);
   };
 
-  const handleNombrePacienteChange = (nuevoNombre: string) => {
+  const handleNombrePacienteChange = async (nuevoNombre: string) => {
     const nombreAnterior = nombrePaciente;
     setNombrePaciente(nuevoNombre);
     if (trabajosAgregados.length > 0 && nuevoNombre.trim() !== '' && nombreAnterior !== nuevoNombre) {
       const trabajosConNombreDiferente = trabajosAgregados.filter(t => t.paciente !== nombreAnterior);
       if (trabajosConNombreDiferente.length === 0 && nombreAnterior.trim() !== '') {
-        if (window.confirm(idioma === 'es' ? '¿Actualizar todos los trabajos al nuevo nombre?' : 'Update all works to new name?')) {
+        if (await confirmarTexto(idioma === 'es' ? '¿Actualizar todos los trabajos al nuevo nombre?' : 'Update all works to new name?')) {
           setTrabajosAgregados(prev => prev.map(t => ({ ...t, paciente: nuevoNombre, rutPaciente: rutPaciente })));
         }
       }
@@ -609,9 +610,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
     await supabase.auth.signOut();
   };
 
-  const scrollAlInicio = () => {
-    if (inicioRef.current) inicioRef.current.scrollIntoView({ behavior: 'smooth' });
-  };
 
   // Textos
   const textos = {
@@ -1443,55 +1441,6 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   };
 
   // Renderizado de historial
-  const renderHistorialServicios = () => (
-    <div style={styles.historialContainer}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h3 style={styles.historialTitle}>📊 {t.historialTitulo}</h3>
-        <button style={styles.historialToggle} onClick={() => setMostrarHistorial(!mostrarHistorial)}>
-          {mostrarHistorial ? '👁️ Ocultar' : '👁️ Mostrar'} {mostrarHistorial ? t.ocultarHistorial : t.verHistorial}
-        </button>
-      </div>
-      {mostrarHistorial && (
-        <>
-          {cargandoHistorial ? (
-            <div style={{ textAlign: 'center', padding: '2rem' }}>
-              <div style={{ fontSize: '2rem' }}>🔄</div>
-              <div style={styles.loadingText}>{t.cargandoHistorial}</div>
-            </div>
-          ) : historialServicios.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📝</div>
-              <p>{t.sinHistorial}</p>
-            </div>
-          ) : (
-            <div style={styles.historialGrid}>
-              {historialServicios.slice(0, 6).map((servicio) => (
-                <div key={servicio.servicio_id} style={styles.historialCard}
-                  onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
-                >
-                  <div style={styles.historialInfo}>
-                    <div style={styles.historialNombre}>{servicio.servicio_nombre}</div>
-                    <div style={styles.historialStats}>
-                      <span>🔥 {servicio.veces_usado} {t.vecesUsado}</span>
-                      <span>📅 {servicio.ultimo_uso.toLocaleDateString(idioma === 'es' ? 'es-CL' : 'en-US')}</span>
-                    </div>
-                  </div>
-                  <button style={styles.historialButton} onClick={() => agregarDesdeHistorial(servicio)}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#0da271'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
-                  >
-                    {t.agregarDesdeHistorial}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-
   // Renderizado del modo detallado (no modificado, solo se mantiene)
   const renderModoDetallado = () => (
     <div style={styles.detailedContainer}>
@@ -1647,11 +1596,11 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
 
   const crearTrabajoDetallado = () => {
     if (!nombrePaciente || !configDetallada.tooth) {
-      alert(idioma === 'es' ? 'Completa nombre y diente' : 'Complete patient name and tooth');
+      avisar(idioma === 'es' ? 'Completa nombre y diente' : 'Complete patient name and tooth');
       return;
     }
     if (configDetallada.selectedMaterials.length === 0) {
-      alert(idioma === 'es' ? 'Selecciona al menos un material' : 'Select at least one material');
+      avisar(idioma === 'es' ? 'Selecciona al menos un material' : 'Select at least one material');
       return;
     }
     const preciosMaterial: Record<string, number> = {
@@ -1718,10 +1667,354 @@ Color del diente: ${configDetallada.toothColor}
       minimalThickness: 0.5, gapWidthCement: 0.1, orsStockAbstinent: false,
       selectedMaterials: [], materialType: 'Zirconia', toothColor: 'A2'
     });
-    alert(idioma === 'es' ? '¡Trabajo detallado agregado!' : 'Detailed work added!');
+    avisar(idioma === 'es' ? '¡Trabajo detallado agregado!' : 'Detailed work added!');
   };
 
   const puedeFinalizar = clinicaSeleccionada && trabajosAgregados.length > 0 && fechaTrabajo;
+
+  // Estilos del diseño en dos cuadros
+  const ui: { [key: string]: React.CSSProperties } = {
+    main: { padding: 'clamp(0.75rem, 2.5vw, 1.5rem)', maxWidth: '1600px', margin: '0 auto' },
+    dosColumnas: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)', gap: '1.25rem', alignItems: 'start' },
+    columnaUnica: { display: 'flex', flexDirection: 'column', gap: '1rem' },
+    barra: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', minHeight: '44px', marginBottom: '0.75rem' },
+    titulo: { fontSize: 'clamp(1.25rem, 3vw, 1.6rem)', fontWeight: 700, color: '#0f172a', margin: 0 },
+    modoGrupo: { display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' },
+    modoEtiqueta: { fontSize: '0.8125rem', fontWeight: 600, color: '#475569', backgroundColor: '#e2e8f0', padding: '0.35rem 0.75rem', borderRadius: '999px' },
+    botonModo: { padding: '0.55rem 1rem', borderRadius: '0.5rem', border: '1px solid #7c3aed', backgroundColor: '#7c3aed', color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' },
+    botonLimpiar: { padding: '0.55rem 1rem', borderRadius: '0.5rem', border: '1px solid #fecaca', backgroundColor: 'white', color: '#dc2626', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' },
+    cuadro: { backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '0.875rem', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' },
+    scrollPropio: { flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' },
+    filtros: { padding: '0.875rem', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '0.625rem' },
+    filtrosFila: { display: 'flex', gap: '0.625rem', flexWrap: 'wrap', alignItems: 'center' },
+    buscadorCaja: { position: 'relative', flex: '1 1 220px', minWidth: 0 },
+    buscadorIcono: { position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.875rem' },
+    buscador: { width: '100%', boxSizing: 'border-box', padding: '0.6rem 2rem 0.6rem 2.25rem', border: '1px solid #cbd5e1', borderRadius: '0.5rem', fontSize: '0.9375rem', backgroundColor: 'white' },
+    buscadorLimpiar: { position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', fontSize: '1.25rem', color: '#64748b', cursor: 'pointer', lineHeight: 1 },
+    anio: { display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', fontWeight: 600, color: '#334155' },
+    anioSelect: { padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.5rem', backgroundColor: 'white', fontSize: '0.875rem' },
+    chips: { display: 'flex', gap: '0.375rem', overflowX: 'auto', paddingBottom: '0.25rem', scrollbarWidth: 'thin' },
+    chip: { flex: '0 0 auto', padding: '0.375rem 0.75rem', borderRadius: '999px', border: '1px solid #cbd5e1', backgroundColor: 'white', color: '#334155', fontSize: '0.8125rem', fontWeight: 500, cursor: 'pointer', whiteSpace: 'nowrap' },
+    chipActivo: { backgroundColor: '#2563eb', borderColor: '#2563eb', color: 'white' },
+    chipDeshabilitado: { opacity: 0.5, cursor: 'not-allowed' },
+    resultados: { fontSize: '0.8125rem', color: '#475569' },
+    vacio: { padding: '2rem 1rem', textAlign: 'center', color: '#64748b', fontSize: '0.9375rem' },
+    tarjetas: { display: 'grid', gap: '0.75rem', padding: '0.875rem' },
+    tarjeta: { border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: 'white', minWidth: 0 },
+    tarjetaNombre: { fontWeight: 600, color: '#0f172a', fontSize: '0.875rem', lineHeight: 1.3, minHeight: '2.6em', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' },
+    tarjetaEtiquetas: { display: 'flex', gap: '0.25rem', flexWrap: 'wrap' },
+    etiquetaCategoria: { fontSize: '0.6875rem', padding: '0.125rem 0.5rem', borderRadius: '999px', backgroundColor: '#eff6ff', color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' },
+    etiquetaAnio: { fontSize: '0.6875rem', padding: '0.125rem 0.5rem', borderRadius: '999px', backgroundColor: '#f1f5f9', color: '#475569' },
+    tarjetaUso: { fontSize: '0.75rem', color: '#b45309' },
+    tarjetaPrecio: { fontWeight: 700, color: '#059669', fontSize: '1rem' },
+    tarjetaControles: { display: 'flex', gap: '0.375rem' },
+    inputCantidad: { width: '3.5rem', flex: '0 0 3.5rem', boxSizing: 'border-box', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.875rem', textAlign: 'center' },
+    inputPieza: { flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.875rem' },
+    inputNota: { width: '100%', boxSizing: 'border-box', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.8125rem' },
+    botonAgregar: { width: '100%', padding: '0.5rem', border: 'none', borderRadius: '0.375rem', backgroundColor: '#2563eb', color: 'white', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer', marginTop: 'auto' },
+    info: { padding: '1rem', borderBottom: '1px solid #e2e8f0' },
+    subtitulo: { fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: '0 0 0.75rem' },
+    infoGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.625rem 0.75rem' },
+    campo: { display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 },
+    campoLabel: { fontSize: '0.75rem', fontWeight: 600, color: '#475569' },
+    input: { width: '100%', boxSizing: 'border-box', padding: '0.5rem 0.625rem', border: '1px solid #cbd5e1', borderRadius: '0.5rem', fontSize: '0.875rem', backgroundColor: 'white', color: '#0f172a' },
+    mesFila: { display: 'flex', gap: '0.25rem', alignItems: 'center' },
+    botonMes: { flex: '0 0 auto', padding: '0.45rem 0.55rem', border: '1px solid #cbd5e1', borderRadius: '0.5rem', backgroundColor: 'white', cursor: 'pointer', fontSize: '0.75rem', color: '#334155' },
+    aviso: { marginTop: '0.75rem', padding: '0.5rem 0.75rem', backgroundColor: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '0.5rem', fontSize: '0.8125rem', color: '#92400e' },
+    agregadosCabecera: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', padding: '0.875rem 1rem 0', flexWrap: 'wrap' },
+    agregadosMes: { fontSize: '0.8125rem', color: '#64748b' },
+    agregados: { padding: '0 1rem 0.75rem', minHeight: '120px' },
+    grupo: { border: '1px solid #e2e8f0', borderLeft: '4px solid #2563eb', borderRadius: '0.625rem', padding: '0.625rem 0.75rem', marginBottom: '0.625rem', backgroundColor: '#f8fafc' },
+    grupoCabecera: { display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'flex-start', marginBottom: '0.375rem' },
+    grupoPaciente: { fontWeight: 700, color: '#0f172a', fontSize: '0.9375rem', overflowWrap: 'anywhere' },
+    grupoDetalle: { fontSize: '0.75rem', color: '#64748b' },
+    grupoTotal: { fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' },
+    item: { display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0', borderTop: '1px solid #e2e8f0' },
+    itemNombre: { fontSize: '0.8125rem', fontWeight: 600, color: '#1e293b', overflowWrap: 'anywhere' },
+    itemDetalle: { fontSize: '0.75rem', color: '#64748b' },
+    itemNota: { fontSize: '0.75rem', color: '#b45309', fontStyle: 'italic', overflowWrap: 'anywhere' },
+    itemPrecio: { fontSize: '0.8125rem', fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' },
+    botonQuitar: { flex: '0 0 auto', width: '28px', height: '28px', borderRadius: '50%', border: '1px solid #fecaca', backgroundColor: 'white', color: '#dc2626', cursor: 'pointer', fontSize: '0.75rem' },
+    pie: { borderTop: '1px solid #e2e8f0', padding: '0.75rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: 'white' },
+    pieTotal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1rem', color: '#0f172a' },
+    contador: { position: 'absolute', right: '14px', bottom: '12px', width: '44px', height: '44px', borderRadius: '50%', border: 'none', backgroundColor: '#2563eb', color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37,99,235,0.35)', zIndex: 1 },
+    botonFinalizar: { width: '100%', padding: '0.8rem', border: 'none', borderRadius: '0.625rem', backgroundColor: '#10b981', color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }
+  };
+
+  // ============================================
+  // DISEÑO EN DOS CUADROS
+  // Izquierda: catálogo (modo simple o detallado) con scroll propio.
+  // Derecha: información del trabajo + trabajos agregados (scroll propio) + Finalizar.
+  // En tablet y celular: el cuadro del trabajo arriba y el catálogo abajo.
+  // ============================================
+  const gruposAgregados = Object.entries(
+    trabajosAgregados.reduce((acc, trabajo) => {
+      const clave = `${trabajo.paciente}-${trabajo.rutPaciente}`;
+      if (!acc[clave]) { acc[clave] = { paciente: trabajo.paciente, rutPaciente: trabajo.rutPaciente, trabajos: [], total: 0 }; }
+      acc[clave].trabajos.push(trabajo);
+      acc[clave].total += trabajo.precioUnitario * trabajo.cantidad;
+      return acc;
+    }, {} as Record<string, { paciente: string, rutPaciente: string, trabajos: TrabajoAgregado[], total: number }>)
+  );
+  const columnasTarjetas = esMovil ? 2 : esCompacto ? 3 : 4;
+  const masUsadasActiva = categoriaSeleccionada === CATEGORIA_MAS_USADAS;
+  const usoDe = (id: string) => historialServicios.find(h => h.servicio_id === id);
+  const enModoDetallado = modoDetallado && !esLaboratorista;
+
+  const barraCatalogo = (
+    <div style={ui.barra}>
+      {!esCompacto && <h1 style={ui.titulo}>{t.title}</h1>}
+      {!esLaboratorista && (
+        <div style={ui.modoGrupo}>
+          <span style={ui.modoEtiqueta}>{enModoDetallado ? '⚙️ Modo detallado' : '📋 Modo simple'}</span>
+          <button style={ui.botonModo} onClick={() => setModoDetallado(!modoDetallado)}>
+            🔄 {idioma === 'es' ? 'Cambiar modo' : 'Switch mode'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const cuadroCatalogo = (
+    <section style={{ ...ui.cuadro, height: esCompacto ? '75vh' : '820px' }} aria-label="Catálogo de servicios">
+      {enModoDetallado ? (
+        <div style={ui.scrollPropio}>{renderModoDetallado()}</div>
+      ) : (
+        <>
+          {/* Filtros fijos: buscador, año y categorías */}
+          <div style={ui.filtros}>
+            <div style={ui.filtrosFila}>
+              <div style={ui.buscadorCaja}>
+                <span style={ui.buscadorIcono}>🔍</span>
+                <input type="text" style={ui.buscador} placeholder={t.buscarServicio} value={terminoBusqueda}
+                  onChange={(e) => setTerminoBusqueda(e.target.value)} />
+                {terminoBusqueda && (
+                  <button style={ui.buscadorLimpiar} onClick={() => setTerminoBusqueda('')} aria-label="Limpiar búsqueda">×</button>
+                )}
+              </div>
+              {!masUsadasActiva && (
+                <label style={ui.anio}>
+                  <span>{esLaboratorista ? (idioma === 'es' ? 'Año del catálogo' : 'Catalog year') : t.filtroAnio.replace(':', '')}</span>
+                  <select style={ui.anioSelect} value={filtroAnio} onChange={(e) => setFiltroAnio(parseInt(e.target.value))}>
+                    <option value={2025}>2025</option>
+                    <option value={2026}>2026</option>
+                    <option value={2027}>2027</option>
+                  </select>
+                </label>
+              )}
+            </div>
+            <div style={{ ...ui.chips, ...(esCompacto ? {} : { flexWrap: 'wrap', overflowX: 'visible' }) }}>
+              <button
+                style={{ ...ui.chip, ...(masUsadasActiva ? ui.chipActivo : {}), ...(!clinicaSeleccionada ? ui.chipDeshabilitado : {}) }}
+                onClick={() => clinicaSeleccionada && setCategoriaSeleccionada(CATEGORIA_MAS_USADAS)}
+                title={clinicaSeleccionada ? 'Prestaciones más usadas en esta clínica' : 'Elige una clínica para ver sus prestaciones más usadas'}
+              >
+                ⭐ Más usadas{clinicaSeleccionada ? ` (${cargandoHistorial ? '…' : historialServicios.filter(h => servicios.some(s => s.id === h.servicio_id)).length})` : ''}
+              </button>
+              {Object.entries(categorias).map(([key, nombre]) => {
+                const cantidad = key === 'todos'
+                  ? servicios.filter(s => s.anio === filtroAnio).length
+                  : servicios.filter(s => s.categoria === key && s.anio === filtroAnio).length;
+                if (key !== 'todos' && cantidad === 0) return null;
+                return (
+                  <button key={key} style={{ ...ui.chip, ...(categoriaSeleccionada === key ? ui.chipActivo : {}) }}
+                    onClick={() => setCategoriaSeleccionada(key)}>
+                    {nombre} ({cantidad})
+                  </button>
+                );
+              })}
+            </div>
+            {terminoBusquedaDebounced.trim() && (
+              <div style={ui.resultados}>
+                {serviciosFiltrados.length} {t.serviciosEncontrados} {idioma === 'es' ? 'para' : 'for'} "<strong>{terminoBusquedaDebounced}</strong>"
+              </div>
+            )}
+          </div>
+
+          {/* Tarjetas con scroll propio */}
+          <div style={ui.scrollPropio}>
+            {cargandoServicios || (masUsadasActiva && cargandoHistorial) ? (
+              <div style={ui.vacio}>🔄 {t.cargandoServicios}</div>
+            ) : serviciosFiltrados.length === 0 ? (
+              <div style={ui.vacio}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📝</div>
+                {masUsadasActiva
+                  ? (terminoBusqueda.trim() ? `Sin resultados para "${terminoBusqueda}" en las más usadas` : 'Esta clínica aún no tiene prestaciones registradas.')
+                  : terminoBusqueda.trim()
+                    ? `${idioma === 'es' ? 'No hay resultados para' : 'No results for'} "${terminoBusqueda}"`
+                    : categoriaSeleccionada !== 'todos'
+                      ? `${idioma === 'es' ? 'No hay servicios en la categoría' : 'No services in category'} "${categorias[categoriaSeleccionada as keyof typeof categorias]}" ${idioma === 'es' ? 'para' : 'for'} ${filtroAnio}`
+                      : `${idioma === 'es' ? 'No hay servicios para el año ' : 'No services for year '}${filtroAnio}`}
+              </div>
+            ) : (
+              <div style={{ ...ui.tarjetas, gridTemplateColumns: `repeat(${columnasTarjetas}, minmax(0, 1fr))` }}>
+                {serviciosFiltrados.map(servicio => {
+                  const uso = masUsadasActiva ? usoDe(servicio.id) : undefined;
+                  return (
+                    <div key={servicio.id} style={ui.tarjeta}>
+                      <div style={ui.tarjetaNombre} title={servicio.nombre}>{servicio.nombre}</div>
+                      <div style={ui.tarjetaEtiquetas}>
+                        <span style={ui.etiquetaCategoria}>{categorias[servicio.categoria as keyof typeof categorias] || servicio.categoria}</span>
+                        <span style={ui.etiquetaAnio}>{servicio.anio}</span>
+                      </div>
+                      {uso && (
+                        <div style={ui.tarjetaUso}>🔥 {uso.veces_usado} {t.vecesUsado} · {uso.ultimo_uso.toLocaleDateString(idioma === 'es' ? 'es-CL' : 'en-US')}</div>
+                      )}
+                      {!esLaboratorista && <div style={ui.tarjetaPrecio}>{formatearPrecioCLP(servicio.precio_base)}</div>}
+                      <div style={ui.tarjetaControles}>
+                        <input type="number" style={ui.inputCantidad} value={cantidades[servicio.id] || 1} min="1"
+                          aria-label="Cantidad" title={idioma === 'es' ? 'Cantidad' : 'Quantity'}
+                          onChange={(e) => actualizarCantidad(servicio.id, parseInt(e.target.value) || 1)} />
+                        <input type="text" style={ui.inputPieza} value={piezasDentales[servicio.id] || ''}
+                          placeholder={idioma === 'es' ? 'Pieza' : 'Tooth'}
+                          onChange={(e) => actualizarPiezaDental(servicio.id, e.target.value)} />
+                      </div>
+                      <input type="text" style={ui.inputNota} placeholder={t.notaPlaceholder}
+                        value={notasServicios[servicio.id] || ''}
+                        onChange={(e) => actualizarNota(servicio.id, e.target.value)} />
+                      <button style={{ ...ui.botonAgregar, ...(agregando ? { opacity: 0.6, cursor: 'not-allowed' } : {}) }}
+                        onClick={() => agregarTrabajoSimple(servicio)} disabled={agregando}>
+                        {agregando ? '...' : `➕ ${t.agregar}`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+
+  const barraTrabajo = (
+    <div style={{ ...ui.barra, justifyContent: 'flex-end' }}>
+      <button style={ui.botonLimpiar} onClick={limpiarTodo}>{t.limpiarTrabajo}</button>
+    </div>
+  );
+
+  const cuadroTrabajo = (
+    <section style={{ ...ui.cuadro, height: esCompacto ? 'auto' : '820px' }} aria-label="Trabajo en preparación">
+      {/* Información del trabajo */}
+      <div style={ui.info}>
+        <h2 style={ui.subtitulo}>📋 {idioma === 'es' ? 'Información del trabajo' : 'Work information'}</h2>
+        <div style={ui.infoGrid}>
+          <label style={ui.campo}>
+            <span style={ui.campoLabel}>{t.clinica}</span>
+            <select style={ui.input} value={clinicaSeleccionada}
+              onChange={(e) => { setClinicaSeleccionada(e.target.value); setDentistaSeleccionado(''); }} required>
+              <option value="">{idioma === 'es' ? 'Selecciona una clínica' : 'Select a clinic'}</option>
+              {clinicas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </label>
+          <label style={ui.campo}>
+            <span style={ui.campoLabel}>{t.dentista}</span>
+            <select style={ui.input} value={dentistaSeleccionado} onChange={(e) => setDentistaSeleccionado(e.target.value)} disabled={!clinicaSeleccionada}>
+              <option value="">{idioma === 'es' ? 'Selecciona un dentista (opcional)' : 'Select a dentist (optional)'}</option>
+              {dentistasFiltrados.map(d => <option key={d.id} value={d.id}>{d.nombre}{d.especialidad ? ` - ${d.especialidad}` : ''}</option>)}
+            </select>
+          </label>
+          <label style={ui.campo}>
+            <span style={ui.campoLabel}>{t.laboratorista}</span>
+            <select style={ui.input} value={laboratoristaSeleccionado} onChange={(e) => setLaboratoristaSeleccionado(e.target.value)} disabled={esLaboratorista}>
+              {!esLaboratorista && <option value="">{idioma === 'es' ? 'Sin asignar' : 'Not assigned'}</option>}
+              {laboratoristas.map(l => <option key={l.id} value={l.id}>{l.nombre}{l.especialidad ? ` - ${l.especialidad}` : ''}</option>)}
+            </select>
+          </label>
+          <div style={ui.campo}>
+            <span style={ui.campoLabel}>{t.fechaTrabajo}</span>
+            <div style={ui.mesFila}>
+              <button style={ui.botonMes} onClick={() => cambiarMes('anterior')} title={t.mesAnterior} aria-label={t.mesAnterior}>◀</button>
+              <input type="month" style={{ ...ui.input, flex: 1, minWidth: 0 }} value={fechaTrabajo} onChange={(e) => setFechaTrabajo(e.target.value)} title={t.seleccionaMes} />
+              <button style={ui.botonMes} onClick={() => cambiarMes('siguiente')} title={t.mesSiguiente} aria-label={t.mesSiguiente}>▶</button>
+              <button style={ui.botonMes} onClick={restablecerMesActual} title={t.mesActual} aria-label={t.mesActual}>↺</button>
+            </div>
+          </div>
+          <label style={ui.campo}>
+            <span style={ui.campoLabel}>{t.paciente}</span>
+            <input type="text" style={ui.input} value={nombrePaciente} onChange={(e) => handleNombrePacienteChange(e.target.value)}
+              placeholder={idioma === 'es' ? 'Ej: Juan Pérez' : 'Ex: John Doe'} required />
+          </label>
+          <label style={ui.campo}>
+            <span style={ui.campoLabel}>{t.rut}</span>
+            <input type="text" style={ui.input} value={rutPaciente} onChange={(e) => handleRutPacienteChange(e.target.value)}
+              placeholder={idioma === 'es' ? 'Ej: 12.345.678-9' : 'Ex: 12345678-9'} />
+          </label>
+        </div>
+        {trabajosAgregados.length > 0 && <div style={ui.aviso}>ℹ️ {t.cambiarPaciente}</div>}
+      </div>
+
+      {/* Trabajos agregados con scroll propio */}
+      <div style={ui.agregadosCabecera}>
+        <h2 style={ui.subtitulo}>🧾 {t.trabajosAgregados} ({trabajosAgregados.length})</h2>
+        {fechaTrabajo && <span style={ui.agregadosMes}>{(() => { const f = formatearFecha(fechaTrabajo); return f.charAt(0).toUpperCase() + f.slice(1); })()}</span>}
+      </div>
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', ...(esCompacto ? {} : { flex: 1, minHeight: 0 }) }}>
+      <div id="trabajos-agregados-container"
+        style={{ ...ui.scrollPropio, ...(esCompacto ? { maxHeight: '50vh', flex: 'none' } : {}), ...ui.agregados,
+                 ...(trabajosAgregados.length > 0 ? { paddingBottom: '64px' } : {}) }}>
+        {trabajosAgregados.length === 0 ? (
+          <div style={ui.vacio}>
+            {idioma === 'es' ? 'Aún no hay trabajos agregados. Completa los datos y agrega servicios del catálogo.' : 'No works added yet.'}
+          </div>
+        ) : (
+          gruposAgregados.map(([clave, grupo]) => (
+            <div key={clave} style={ui.grupo}>
+              <div style={ui.grupoCabecera}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={ui.grupoPaciente}>👤 {grupo.paciente}</div>
+                  <div style={ui.grupoDetalle}>
+                    {grupo.rutPaciente ? `RUT: ${grupo.rutPaciente} · ` : ''}{grupo.trabajos.length} {grupo.trabajos.length === 1 ? 'prestación' : 'prestaciones'}
+                  </div>
+                </div>
+                {!esLaboratorista && <div style={ui.grupoTotal}>{formatearPrecioCLP(grupo.total)}</div>}
+              </div>
+              {grupo.trabajos.map(trabajo => (
+                <div key={trabajo.id} style={ui.item}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={ui.itemNombre}>{trabajo.servicio.nombre}</div>
+                    <div style={ui.itemDetalle}>
+                      🦷 {trabajo.piezaDental || (idioma === 'es' ? 'Sin pieza' : 'No tooth')} · ✕{trabajo.cantidad}
+                      {!esLaboratorista && trabajo.cantidad > 1 && ` · ${formatearPrecioCLP(trabajo.precioUnitario)} c/u`}
+                    </div>
+                    {trabajo.notaEspecial && <div style={ui.itemNota}>📝 {trabajo.notaEspecial}</div>}
+                  </div>
+                  {!esLaboratorista && <div style={ui.itemPrecio}>{formatearPrecioCLP(trabajo.precioUnitario * trabajo.cantidad)}</div>}
+                  <button style={ui.botonQuitar} onClick={() => eliminarTrabajo(trabajo.id)}
+                    title={t.eliminar} aria-label={`${t.eliminar} ${trabajo.servicio.nombre}`}>✕</button>
+                </div>
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Contador dentro de la lista: no tapa nada fuera de ella; al tocarlo baja al último agregado */}
+      {trabajosAgregados.length > 0 && (
+        <button style={ui.contador}
+          onClick={() => { const lista = document.getElementById('trabajos-agregados-container'); if (lista) lista.scrollTo({ top: lista.scrollHeight, behavior: 'smooth' }); }}
+          title={`${trabajosAgregados.length} prestaciones agregadas`}
+          aria-label={`${trabajosAgregados.length} prestaciones agregadas`}>
+          {trabajosAgregados.length}
+        </button>
+      )}
+      </div>
+
+      {/* Pie fijo: total (solo admin) y Finalizar */}
+      <div style={ui.pie}>
+        {!esLaboratorista && (
+          <div style={ui.pieTotal}>
+            <span>{t.total}</span>
+            <strong style={{ color: '#059669' }}>{formatearPrecioCLP(calcularTotal())}</strong>
+          </div>
+        )}
+        <button style={{ ...ui.botonFinalizar, ...(!puedeFinalizar || guardando ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+          onClick={finalizarTrabajo} disabled={!puedeFinalizar || guardando}>
+          {guardando ? 'Guardando...' : t.finalizar}
+        </button>
+      </div>
+    </section>
+  );
 
   return (
     <div style={styles.container}>
@@ -1732,341 +2025,26 @@ Color del diente: ${configDetallada.toothColor}
         onBack={onBack}
         title={t.title}
       />
-      <main style={styles.mainContent}>
+      <main style={ui.main}>
         {cargandoDatos ? (
           <div style={styles.loadingContainer}>
             <div style={{ fontSize: '3rem' }}>🔄</div>
             <div style={styles.loadingText}>{t.cargandoDatos}</div>
           </div>
+        ) : esCompacto ? (
+          <div style={ui.columnaUnica}>
+            <h1 style={ui.titulo}>{t.title}</h1>
+            <div>{barraTrabajo}{cuadroTrabajo}</div>
+            <div>{barraCatalogo}{cuadroCatalogo}</div>
+          </div>
         ) : (
-          <div>
-            <div ref={inicioRef} />
-            <section style={styles.welcomeSection}>
-              <h1 style={styles.welcomeTitle}>{t.title}</h1>
-              <p style={styles.welcomeSubtitle}>
-                {idioma === 'es'
-                  ? 'Crea listas de trabajo para tus pacientes seleccionando servicios de tu catálogo.'
-                  : 'Create work lists for your patients by selecting services from your catalog.'}
-              </p>
-            </section>
-
-            <div style={styles.formContainer}>
-              <h3 style={{ color: '#1e293b', marginBottom: '1.5rem', fontSize: '1.25rem' }}>
-                📋 {idioma === 'es' ? 'Información del Trabajo' : 'Work Information'}
-              </h3>
-              <div style={styles.formGrid}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{t.clinica}</label>
-                  <select style={styles.select} value={clinicaSeleccionada} onChange={(e) => { setClinicaSeleccionada(e.target.value); setDentistaSeleccionado(''); setMostrarHistorial(false); }} required>
-                    <option value="">{idioma === 'es' ? 'Selecciona una clínica' : 'Select a clinic'}</option>
-                    {clinicas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                  </select>
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{t.dentista}</label>
-                  <select style={styles.select} value={dentistaSeleccionado} onChange={(e) => setDentistaSeleccionado(e.target.value)} disabled={!clinicaSeleccionada}>
-                    <option value="">{idioma === 'es' ? 'Selecciona un dentista (opcional)' : 'Select a dentist (optional)'}</option>
-                    {dentistasFiltrados.map(d => <option key={d.id} value={d.id}>{d.nombre} - {d.especialidad}</option>)}
-                  </select>
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{t.laboratorista}</label>
-                  <select style={styles.select} value={laboratoristaSeleccionado} onChange={(e) => setLaboratoristaSeleccionado(e.target.value)} disabled={esLaboratorista}>
-                    {!esLaboratorista && <option value="">{idioma === 'es' ? 'Sin asignar' : 'Not assigned'}</option>}
-                    {laboratoristas.map(l => <option key={l.id} value={l.id}>{l.nombre} - {l.especialidad}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label style={styles.label}>{t.fechaTrabajo}</label>
-                <div style={styles.dateControls}>
-                  <div style={styles.dateDisplay}>📅 {formatearFecha(fechaTrabajo)}</div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button style={styles.dateButton} onClick={() => cambiarMes('anterior')} title={t.mesAnterior}>◀️</button>
-                    <input type="month" style={styles.input} value={fechaTrabajo} onChange={(e) => setFechaTrabajo(e.target.value)} title={t.seleccionaMes} />
-                    <button style={styles.dateButton} onClick={() => cambiarMes('siguiente')} title={t.mesSiguiente}>▶️</button>
-                    <button style={styles.dateButton} onClick={restablecerMesActual} title={t.mesActual}>🔄</button>
-                  </div>
-                </div>
-              </div>
-
-              <div style={styles.formGrid}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{t.paciente}</label>
-                  <input type="text" style={styles.input} value={nombrePaciente} onChange={(e) => handleNombrePacienteChange(e.target.value)} placeholder={idioma === 'es' ? "Ej: Juan Pérez" : "Ex: John Doe"} required />
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{t.rut}</label>
-                  <input type="text" style={styles.input} value={rutPaciente} onChange={(e) => handleRutPacienteChange(e.target.value)} placeholder={idioma === 'es' ? "Ej: 12.345.678-9" : "Ex: 12345678-9"} />
-                </div>
-              </div>
-
-              {trabajosAgregados.length > 0 && (
-                <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '0.5rem', fontSize: '14px', color: '#92400e' }}>
-                  ℹ️ {t.cambiarPaciente}
-                </div>
-              )}
-            </div>
-
-            {clinicaSeleccionada && renderHistorialServicios()}
-
-            {!esLaboratorista && (
-              <div style={styles.modeSelector}>
-                <button style={{ ...styles.modeButton, ...(!modoDetallado ? styles.modeButtonActive : {}) }} onClick={() => setModoDetallado(false)}>
-                  {t.modoSimple}
-                </button>
-                <button style={{ ...styles.modeButton, ...(modoDetallado ? styles.modeButtonActive : {}) }} onClick={() => setModoDetallado(true)}>
-                  {t.modoDetallado}
-                </button>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
-              <button style={styles.clearButton} onClick={limpiarTodo}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}>
-                🗑️ {t.limpiarTrabajo}
-              </button>
-            </div>
-
-            {modoDetallado && !esLaboratorista ? (
-              renderModoDetallado()
-            ) : (
-              <div>
-                <div style={styles.searchContainer}>
-                  <div style={styles.searchIcon}>🔍</div>
-                  <input type="text" style={styles.searchInput} placeholder={t.buscarServicio} value={terminoBusqueda} onChange={(e) => setTerminoBusqueda(e.target.value)} />
-                  {terminoBusqueda.trim() && (
-                    <div style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', color: '#64748b', backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '4px' }}>
-                      {serviciosFiltrados.length} {t.serviciosEncontrados}
-                    </div>
-                  )}
-                </div>
-
-                <div style={styles.filtersContainer}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <div>
-                      <label style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginRight: '8px' }}>{esLaboratorista ? (idioma === 'es' ? 'Año del catálogo:' : 'Catalog year:') : t.filtroAnio}</label>
-                      <select style={styles.select} value={filtroAnio} onChange={(e) => setFiltroAnio(parseInt(e.target.value))}>
-                        <option value={2025}>2025</option>
-                        <option value={2026}>2026</option>
-                        <option value={2027}>2027</option>
-                      </select>
-                    </div>
-                    <div>
-                      <h4 style={{ marginBottom: '0.5rem', color: '#1e293b' }}>{idioma === 'es' ? 'Filtrar por categoría:' : 'Filter by category:'}</h4>
-                      <div style={styles.filters}>
-                        {Object.entries(categorias).map(([key, nombre]) => (
-                          <button key={key} style={{ ...styles.filterButton, ...(categoriaSeleccionada === key ? styles.filterButtonActive : {}) }}
-                            onClick={() => setCategoriaSeleccionada(key)}>
-                            {nombre} ({key === 'todos' ? servicios.filter(s => s.anio === filtroAnio).length : servicios.filter(s => s.categoria === key && s.anio === filtroAnio).length})
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {terminoBusquedaDebounced.trim() && serviciosFiltrados.length > 0 && (
-                  <div style={styles.resultadosInfo}>
-                    {t.resultadosPara} "<strong>{terminoBusquedaDebounced}</strong>"
-                    {categoriaSeleccionada !== 'todos' && ` ${t.enCategoria} ${categorias[categoriaSeleccionada as keyof typeof categorias]}`}
-                    : <strong>{serviciosFiltrados.length}</strong> {t.serviciosEncontrados}
-                  </div>
-                )}
-
-                {cargandoServicios ? (
-                  <div style={styles.loadingContainer}>
-                    <div style={{ fontSize: '3rem' }}>🔄</div>
-                    <div style={styles.loadingText}>{t.cargandoServicios}</div>
-                  </div>
-                ) : serviciosFiltrados.length === 0 ? (
-                  <div style={styles.emptyState}>
-                    <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📝</div>
-                    <h3 style={{ marginBottom: '0.5rem' }}>{t.sinServicios}</h3>
-                    <p>
-                      {categoriaSeleccionada !== 'todos'
-                        ? `${idioma === 'es' ? 'No hay servicios en la categoría' : 'No services in category'} "${categorias[categoriaSeleccionada as keyof typeof categorias]}" para ${filtroAnio}`
-                        : terminoBusqueda.trim()
-                          ? `${idioma === 'es' ? 'No hay resultados para' : 'No results for'} "${terminoBusqueda}"`
-                          : `${idioma === 'es' ? 'No hay servicios para el año ' : 'No services for year '}${filtroAnio}`}
-                    </p>
-                  </div>
-                ) : (
-                  <div style={styles.serviciosGrid}>
-                    {serviciosFiltrados.map(servicio => (
-                      <div key={servicio.id} style={styles.servicioCard}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.1)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)'; }}
-                      >
-                        <div style={styles.cardHeader}>
-                          <h3 style={styles.servicioNombre}>{servicio.nombre}</h3>
-                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                            <span style={styles.categoriaBadge}>
-                              {categorias[servicio.categoria as keyof typeof categorias]}
-                            </span>
-                            {/* 🔥 Mostramos el año */}
-                            <span style={styles.anioBadge}>
-                              {servicio.anio}
-                            </span>
-                          </div>
-                        </div>
-
-                        {!esLaboratorista && (
-                          <div style={styles.precio}>
-                            {formatearPrecioCLP(servicio.precio_base)}
-                          </div>
-                        )}
-
-                        <div style={styles.controlesServicio}>
-                          <div style={styles.controlesSuperiores}>
-                            <input type="number" style={styles.inputCantidad} value={cantidades[servicio.id] || 1} min="1"
-                              onChange={(e) => actualizarCantidad(servicio.id, parseInt(e.target.value) || 1)}
-                              placeholder={idioma === 'es' ? "Cant" : "Qty"} />
-                            <input type="text" style={styles.inputPieza} value={piezasDentales[servicio.id] || ''}
-                              onChange={(e) => actualizarPiezaDental(servicio.id, e.target.value)}
-                              placeholder={idioma === 'es' ? "Pieza" : "Tooth"} />
-                            <button style={{ ...styles.addButton, ...(agregando ? styles.addButtonDisabled : {}) }}
-                              onClick={() => agregarTrabajoSimple(servicio)} disabled={agregando}
-                              onMouseEnter={(e) => { if (!agregando) e.currentTarget.style.backgroundColor = '#2563eb'; }}
-                              onMouseLeave={(e) => { if (!agregando) e.currentTarget.style.backgroundColor = '#3b82f6'; }}>
-                              {agregando ? '...' : t.agregar}
-                            </button>
-                          </div>
-                          <input type="text" style={styles.inputNota} placeholder={t.notaPlaceholder}
-                            value={notasServicios[servicio.id] || ''}
-                            onChange={(e) => actualizarNota(servicio.id, e.target.value)} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div style={styles.trabajosContainer} id="trabajos-agregados-container">
-                  <h3 style={{ color: '#1e293b', marginBottom: '1.5rem', fontSize: '1.5rem' }}>
-                    📋 {t.trabajosAgregados} ({trabajosAgregados.length})
-                    {fechaTrabajo && (
-                      <span style={{ fontSize: '1rem', color: '#64748b', marginLeft: '1rem', fontWeight: 'normal' }}>
-                        | Mes: {formatearFecha(fechaTrabajo)}
-                      </span>
-                    )}
-                  </h3>
-
-                  {trabajosAgregados.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
-                      <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📝</div>
-                      <p>{idioma === 'es' ? 'No hay trabajos agregados. Completa los datos y agrega servicios.' : 'No works added. Complete the information and add services.'}</p>
-                    </div>
-                  ) : (
-                    <>
-                      {Object.entries(
-                        trabajosAgregados.reduce((acc, trabajo) => {
-                          const clave = `${trabajo.paciente}-${trabajo.rutPaciente}`;
-                          if (!acc[clave]) { acc[clave] = { paciente: trabajo.paciente, rutPaciente: trabajo.rutPaciente, trabajos: [], total: 0 }; }
-                          acc[clave].trabajos.push(trabajo);
-                          acc[clave].total += trabajo.precioUnitario * trabajo.cantidad;
-                          return acc;
-                        }, {} as Record<string, { paciente: string, rutPaciente: string, trabajos: TrabajoAgregado[], total: number }>)
-                      ).map(([, grupo], grupoIndex) => (
-                        <div key={grupoIndex} style={{
-                          backgroundColor: '#f8fafc', borderRadius: '0.75rem', padding: '1.5rem', marginBottom: '2rem',
-                          border: '1px solid #e2e8f0', borderLeft: '4px solid #3b82f6'
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '2px solid #e2e8f0' }}>
-                            <div>
-                              <h4 style={{ fontSize: '1.25rem', fontWeight: '600', margin: 0, color: '#1e293b' }}>👤 {grupo.paciente}</h4>
-                              {grupo.rutPaciente && <div style={{ color: '#64748b', fontSize: '0.875rem', marginTop: '0.25rem' }}>RUT: {grupo.rutPaciente}</div>}
-                              <div style={{ backgroundColor: '#3b82f6', color: 'white', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.75rem', fontWeight: '500', display: 'inline-block', marginTop: '0.5rem' }}>
-                                {grupo.trabajos.length} prestaciones
-                              </div>
-                            </div>
-                            {!esLaboratorista && (
-                              <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#059669' }}>{formatearPrecioCLP(grupo.total)}</div>
-                                <div style={{ fontSize: '0.875rem', color: '#64748b' }}>Total del paciente</div>
-                              </div>
-                            )}
-                          </div>
-                          {grupo.trabajos.map((trabajo, trabajoIndex) => (
-                            <div key={trabajo.id} style={{ ...styles.trabajoItem, marginBottom: '1rem', backgroundColor: trabajoIndex % 2 === 0 ? 'white' : '#f8fafc' }}>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '0.5rem' }}>{trabajo.servicio.nombre}</div>
-                                <div style={{ fontSize: '14px', color: '#64748b' }}>
-                                  <div>🦷 {idioma === 'es' ? 'Pieza:' : 'Tooth:'} {trabajo.piezaDental || (idioma === 'es' ? 'No especificada' : 'Not specified')}</div>
-                                  <div>🔢 {idioma === 'es' ? 'Cantidad:' : 'Quantity:'} {trabajo.cantidad}</div>
-                                  {trabajo.notaEspecial && (
-                                    <div style={{ marginTop: '0.5rem', fontSize: '12px', color: '#f59e0b', backgroundColor: '#fef3c7', padding: '0.5rem', borderRadius: '0.25rem', fontStyle: 'italic' }}>
-                                      📝 {trabajo.notaEspecial}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              <div style={{ textAlign: 'right' }}>
-                                {!esLaboratorista && (
-                                  <>
-                                    <div style={{ fontWeight: 700, color: '#059669', fontSize: '1.25rem' }}>{formatearPrecioCLP(trabajo.precioUnitario * trabajo.cantidad)}</div>
-                                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '0.25rem' }}>{trabajo.cantidad > 1 && `(${formatearPrecioCLP(trabajo.precioUnitario)} ${idioma === 'es' ? 'c/u' : 'each'})`}</div>
-                                  </>
-                                )}
-                                <button style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '0.375rem', background: '#ef4444', color: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: '500', marginTop: '0.75rem' }}
-                                  onClick={() => eliminarTrabajo(trabajo.id)}
-                                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
-                                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}>
-                                  {t.eliminar}
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                          {!esLaboratorista && (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', backgroundColor: '#f1f5f9', borderRadius: '0.5rem', marginTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
-                              <span style={{ fontWeight: '600', color: '#1e293b' }}>{idioma === 'es' ? 'Total Paciente:' : 'Patient Total:'}</span>
-                              <span style={{ fontWeight: '700', color: '#059669' }}>{formatearPrecioCLP(grupo.total)}</span>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {!esLaboratorista && (
-                        <div style={styles.totalContainer}>
-                          <span style={styles.totalText}>{t.total}:</span>
-                          <span style={styles.totalAmount}>{formatearPrecioCLP(calcularTotal())}</span>
-                        </div>
-                      )}
-                      <div style={{ textAlign: 'center', marginTop: '2rem' }}>
-                        <button style={{ ...styles.addButton, padding: '1rem 3rem', fontSize: '1.125rem', opacity: puedeFinalizar ? 1 : 0.5, cursor: puedeFinalizar ? 'pointer' : 'not-allowed', backgroundColor: '#10b981' }}
-                          onClick={finalizarTrabajo} disabled={!puedeFinalizar || guardando}
-                          onMouseEnter={(e) => { if (puedeFinalizar && !guardando) e.currentTarget.style.backgroundColor = '#059669'; }}
-                          onMouseLeave={(e) => { if (puedeFinalizar && !guardando) e.currentTarget.style.backgroundColor = '#10b981'; }}>
-                          {guardando ? 'Guardando...' : t.finalizar}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
+          <div style={ui.dosColumnas}>
+            <div style={{ minWidth: 0 }}>{barraCatalogo}{cuadroCatalogo}</div>
+            <div style={{ minWidth: 0 }}>{barraTrabajo}{cuadroTrabajo}</div>
           </div>
         )}
       </main>
 
-      {showFloatingCounter && (
-        <>
-          <div style={{ ...styles.floatingCounter, bottom: '90px' }}
-            onClick={() => { const container = document.getElementById('trabajos-agregados-container'); if (container) container.scrollIntoView({ behavior: 'smooth' }); }}
-            onMouseEnter={(e: any) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(59, 130, 246, 0.4)'; }}
-            onMouseLeave={(e: any) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.3)'; }}
-            title={`${trabajosAgregados.length} prestaciones agregadas`}>
-            {trabajosAgregados.length}
-          </div>
-          <div style={{ ...styles.floatingCounter, backgroundColor: '#10b981', bottom: '20px' }}
-            onClick={scrollAlInicio}
-            onMouseEnter={(e: any) => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.4)'; }}
-            onMouseLeave={(e: any) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)'; }}
-            title="Ir al inicio">
-            ↑
-          </div>
-        </>
-      )}
     </div>
   );
 };

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import Header from './Header';
 import { nombrePlan } from '../hooks/useMembresia';
 import { formatearCLP, mensajeBD } from '../hooks/usePlanes';
+import { useDialogos } from './ui/Dialogos';
 
 // ============================================
 // CONTROL DE PAGOS (solo super admin)
@@ -52,6 +53,7 @@ const vencimientoResultante = (actual: string | null, meses: number) => {
 };
 
 const ControlPagosManual: React.FC = () => {
+  const { confirmarTexto, avisar } = useDialogos();
   const navigate = useNavigate();
   const [usuario, setUsuario] = useState<any>(null);
   const [pagos, setPagos] = useState<PagoAdmin[]>([]);
@@ -95,7 +97,7 @@ const ControlPagosManual: React.FC = () => {
     const { data, error } = await supabase.storage.from('pagos').createSignedUrl(ruta, 300);
     if (error || !data?.signedUrl) {
       ventana?.close();
-      alert('No se pudo abrir el comprobante.');
+      avisar('No se pudo abrir el comprobante.');
       return;
     }
     if (ventana) ventana.location.href = data.signedUrl;
@@ -105,7 +107,7 @@ const ControlPagosManual: React.FC = () => {
   const aprobar = async (p: PagoAdmin) => {
     const meses = mesesAprobar[p.id] ?? p.meses ?? 1;
     const nuevo = vencimientoResultante(p.vencimiento_actual, meses);
-    if (!window.confirm(
+    if (!await confirmarTexto(
       `¿Aprobar el pago de ${p.laboratorio || 'este laboratorio'}?\n\n` +
       `Plan: ${nombrePlan(p.plan)} · ${meses} ${meses === 1 ? 'mes' : 'meses'}\n` +
       `Nuevo vencimiento: ${nuevo}`
@@ -114,23 +116,23 @@ const ControlPagosManual: React.FC = () => {
     const { data, error } = await supabase.rpc('aprobar_pago', { p_id: p.id, p_meses: meses });
     setProcesando(null);
     if (error) {
-      alert('❌ ' + mensajeBD(error, 'No se pudo aprobar el pago.'));
+      avisar('❌ ' + mensajeBD(error, 'No se pudo aprobar el pago.'));
       return;
     }
-    alert(`✅ Pago aprobado. El plan vence el ${fecha(data as string)}.`);
+    avisar(`✅ Pago aprobado. El plan vence el ${fecha(data as string)}.`);
     cargarPagos();
   };
 
   const confirmarRechazo = async (p: PagoAdmin) => {
     if (!motivo.trim()) {
-      alert('Indica el motivo del rechazo (lo verá el laboratorio).');
+      avisar('Indica el motivo del rechazo (lo verá el laboratorio).');
       return;
     }
     setProcesando(p.id);
     const { error } = await supabase.rpc('rechazar_pago', { p_id: p.id, p_motivo: motivo.trim() });
     setProcesando(null);
     if (error) {
-      alert('❌ ' + mensajeBD(error, 'No se pudo rechazar el pago.'));
+      avisar('❌ ' + mensajeBD(error, 'No se pudo rechazar el pago.'));
       return;
     }
     setRechazando(null);

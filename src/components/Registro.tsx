@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { usePlanes } from '../hooks/usePlanes';
+import { useDialogos } from './ui/Dialogos';
 
 interface RegistroProps {
   onBack?: () => void;
 }
 
 const Registro: React.FC<RegistroProps> = ({ onBack }) => {
+  const { avisar } = useDialogos();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   // Acepta los nombres antiguos de plan que aún puedan venir en enlaces
@@ -642,7 +644,7 @@ const Registro: React.FC<RegistroProps> = ({ onBack }) => {
                     <button
                       onClick={() => {
                         setComprobanteEnviado(true);
-                        alert('Recuerda enviar el comprobante a transferencias@dentalflow.com\n\nIncluye tu email de registro en el asunto.');
+                        avisar('Recuerda enviar el comprobante a transferencias@dentalflow.com\n\nIncluye tu email de registro en el asunto.');
                       }}
                       style={{
                         backgroundColor: '#10b981',

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
 import { useMembresia } from '../hooks/useMembresia';
+import { useDialogos } from './ui/Dialogos';
 
 interface DashboardUser {
   id: string;
@@ -28,6 +29,7 @@ interface Module {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
+  const { confirmarTexto, avisar } = useDialogos();
   const navigate = useNavigate();
   const membresia = useMembresia(user.id);
 
@@ -234,13 +236,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   // ============================================
   const handleLogout = async () => {
     if (cerrandoSesion) return;
-    if (!window.confirm('¿Estás seguro de que quieres cerrar sesión?')) return;
+    if (!await confirmarTexto('¿Estás seguro de que quieres cerrar sesión?')) return;
     try {
       setCerrandoSesion(true);
       await onLogout();
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
-      alert('Error al cerrar sesión. Por favor, intenta de nuevo.');
+      avisar('Error al cerrar sesión. Por favor, intenta de nuevo.');
     } finally {
       setCerrandoSesion(false);
     }
