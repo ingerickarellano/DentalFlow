@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './index.css';
 import App from './App';
+import { DialogosProvider } from './components/ui/Dialogos';
 import reportWebVitals from './reportWebVitals';
 // Registrar Service Worker
 if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
@@ -30,7 +31,9 @@ const root = ReactDOM.createRoot(
 root.render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <DialogosProvider>
+        <App />
+      </DialogosProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

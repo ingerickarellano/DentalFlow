@@ -89,6 +89,13 @@ type Styles = {
   [key: string]: React.CSSProperties;
 };
 
+// Logo genérico dental para el PDF cuando el laboratorio no subió uno
+const LOGO_DENTAL_GENERICO = `<svg class="logo" width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="Laboratorio dental">
+  <circle cx="32" cy="32" r="30" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <path d="M22 16c-5 0-8 4-8 9 0 6 3 9 4 15 1 5 2 9 5 9 3 0 3-4 4-8 1-3 2-5 5-5s4 2 5 5c1 4 1 8 4 8 3 0 4-4 5-9 1-6 4-9 4-15 0-5-3-9-8-9-4 0-6 2-10 2s-6-2-10-2z" fill="#ffffff" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M25 22c2 1 4 1.5 7 1.5" fill="none" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>
+</svg>`;
+
 const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
   const [filtros, setFiltros] = useState<FiltrosReporte>({
     clinicaId: 'todos',
@@ -102,6 +109,8 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
   const [trabajos, setTrabajos] = useState<Trabajo[]>([]);
   const [clinicas, setClinicas] = useState<Clinica[]>([]);
   const [configuracionLaboratorio, setConfiguracionLaboratorio] = useState<ConfiguracionLaboratorio | null>(null);
+  // Nombre con que se registró el laboratorio (se usa si no configuró uno en Opciones de la Cuenta)
+  const [nombreLaboratorioRegistro, setNombreLaboratorioRegistro] = useState('');
   const [cargando, setCargando] = useState(false);
   const [actualizandoEstado, setActualizandoEstado] = useState<string | null>(null);
   const [bulkUpdating, setBulkUpdating] = useState(false);
@@ -144,8 +153,9 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
         });
       }
 
-      // Obtener trabajos con datos de la clínica (incluyendo tipo de retención)
-      const [trabajosRes, clinicasRes, configuracionRes] = await Promise.all([
+      // Todos los trabajos del laboratorio, incluidos los que crean sus laboratoristas
+      // (la base de datos solo entrega los del laboratorio del admin)
+      const [trabajosRes, clinicasRes, configuracionRes, membresiaRes] = await Promise.all([
         supabase
           .from('trabajos')
           .select(`
@@ -157,10 +167,10 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
               porcentaje_retencion
             )
           `)
-          .eq('usuario_id', user.id)
           .order('fecha_recibido', { ascending: false }),
         supabase.from('clinicas').select('*'),
-        supabase.from('configuracion_laboratorio').select('*').eq('usuario_id', user.id).single()
+        supabase.from('configuracion_laboratorio').select('*').eq('usuario_id', user.id).maybeSingle(),
+        supabase.rpc('mi_membresia')
       ]);
 
       if (trabajosRes.error) throw trabajosRes.error;
@@ -169,21 +179,10 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
       setTrabajos(trabajosRes.data || []);
       setClinicas(clinicasRes.data || []);
 
-      if (configuracionRes.data) {
-        setConfiguracionLaboratorio(configuracionRes.data);
-      } else {
-        setConfiguracionLaboratorio({
-          nombre_laboratorio: 'Laboratorio Dental Pro',
-          rut: '76.123.456-7',
-          direccion: 'Av. Principal 123, Santiago, Chile',
-          telefono: '+56 2 2345 6789',
-          email: 'contacto@laboratoriodental.cl',
-          logo: null,
-          tipo_impuesto: 'iva',
-          porcentaje_impuesto: 19,
-          usuario_id: user.id
-        });
-      }
+      // Solo datos reales: si el laboratorio no configuró sus datos, el PDF no los inventa
+      setConfiguracionLaboratorio(configuracionRes.data || null);
+      const filaMembresia = Array.isArray(membresiaRes.data) ? membresiaRes.data[0] : membresiaRes.data;
+      setNombreLaboratorioRegistro(filaMembresia?.laboratorio || '');
     } catch (error: any) {
       console.error('Error cargando datos:', error);
       alert(`Error al cargar los datos: ${error.message}`);
@@ -406,6 +405,19 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
   };
 
   const exportarPDF = () => {
+    // Datos del laboratorio sobre "Período": solo los que existen
+    const esc = (v: any) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as any)[c]);
+    const nombreLab = (configuracionLaboratorio?.nombre_laboratorio || nombreLaboratorioRegistro || '').trim();
+    const lineasLab = [
+      configuracionLaboratorio?.rut ? `RUT: ${esc(configuracionLaboratorio.rut)}` : '',
+      esc(configuracionLaboratorio?.direccion || ''),
+      configuracionLaboratorio?.telefono ? `Tel: ${esc(configuracionLaboratorio.telefono)}` : '',
+      esc(configuracionLaboratorio?.email || '')
+    ].map(l => l.trim()).filter(Boolean);
+    const datosLaboratorioHTML = nombreLab || lineasLab.length
+      ? `<div class="lab-info">${nombreLab ? `<strong>${esc(nombreLab)}</strong>` : ''}${nombreLab && lineasLab.length ? '<br>' : ''}${lineasLab.join('<br>')}</div>`
+      : '';
+
     const clinicaSeleccionada = filtros.clinicaId !== 'todos'
       ? clinicas.find(c => c.id === filtros.clinicaId)
       : null;
@@ -474,7 +486,7 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
           .left { flex: 1; }
           .right { flex: 1; text-align: right; }
           .logo { max-width: 100px; max-height: 60px; object-fit: contain; margin-bottom: 5px; }
-          .lab-info { font-size: 11px; color: #475569; line-height: 1.4; }
+          .lab-info { font-size: 11px; color: #475569; line-height: 1.4; margin-bottom: 8px; }
           .lab-info strong { color: #1e293b; font-size: 13px; }
           .title-section h1 { color: #2563eb; font-size: 20px; font-weight: 700; margin: 0 0 5px 0; }
           .title-section h2 { color: #1e293b; font-size: 16px; font-weight: 600; margin: 0 0 8px 0; }
@@ -594,21 +606,15 @@ const Reportes: React.FC<ReportesProps> = ({ onBack }) => {
               ${
                 configuracionLaboratorio?.logo
                   ? `<img src="${configuracionLaboratorio.logo}" class="logo" alt="Logo">`
-                  : '<div style="font-size: 36px; color: #2563eb;">🦷</div>'
+                  : LOGO_DENTAL_GENERICO
               }
-              <div class="lab-info">
-                <strong>${configuracionLaboratorio?.nombre_laboratorio || 'Laboratorio Dental'}</strong><br>
-                ${configuracionLaboratorio?.rut || ''}<br>
-                ${configuracionLaboratorio?.direccion || ''}<br>
-                ${configuracionLaboratorio?.telefono || ''}<br>
-                ${configuracionLaboratorio?.email || ''}
-              </div>
             </div>
             <div class="right">
               <div class="title-section">
                 <h1>INFORME DE PRESTACIONES DENTALES</h1>
                 <h2>${clinicaSeleccionada ? `CLÍNICA: ${clinicaSeleccionada.nombre.toUpperCase()}` : 'TODAS LAS CLÍNICAS'}</h2>
               </div>
+              ${datosLaboratorioHTML}
               <div class="report-info">
                 <p><strong>Período:</strong> ${
                   filtros.periodo === 'mes'
