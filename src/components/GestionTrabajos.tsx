@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
+import { useDialogos } from './ui/Dialogos';
 
 interface GestionTrabajosProps {
   onBack?: () => void;
@@ -172,6 +173,17 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
   // Sus cambios pasan por funciones de la base de datos que validan el acceso.
   const [esLaboratorista, setEsLaboratorista] = useState(false);
   const [puedeDespachar, setPuedeDespachar] = useState(true);
+  const { confirmar, avisar } = useDialogos();
+
+  // Selección para "Finalizar seleccionados" (clave = ids del trabajo agrupado)
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
+  const claveTrabajo = (t: { ids: string[] }) => t.ids.join('-');
+  const sePuedeFinalizar = (t: { estado: string }) => t.estado === 'pendiente' || t.estado === 'produccion';
+  const alternarSeleccion = (clave: string) => setSeleccionados(prev => {
+    const nuevo = new Set(prev);
+    if (nuevo.has(clave)) nuevo.delete(clave); else nuevo.add(clave);
+    return nuevo;
+  });
 
   // Los mensajes de la base de datos vienen con un código delante (NO_AUTORIZADO: ...)
   const mensajeDeError = (error: any, porDefecto: string) => {
@@ -203,6 +215,11 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
   useEffect(() => {
     cargarDatos();
   }, []);
+
+  // Al cambiar los filtros se limpia la selección (no finalizar algo que ya no se ve)
+  useEffect(() => {
+    setSeleccionados(new Set());
+  }, [filtros]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -428,22 +445,27 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     }
   };
 
-  const finalizarTodosTrabajosClinica = async (clinicaId: string) => {
-    const trabajosPendientes = trabajosAgrupados.filter(t =>
-      t.clinica_id === clinicaId &&
-      (t.estado === 'pendiente' || t.estado === 'produccion')
-    );
-
-    if (trabajosPendientes.length === 0) {
-      alert('No hay trabajos pendientes en esta clínica');
+  const finalizarSeleccionados = async () => {
+    const elegidos = trabajosAgrupados.filter(t => seleccionados.has(claveTrabajo(t)) && sePuedeFinalizar(t));
+    if (elegidos.length === 0) {
+      setSeleccionados(new Set());
       return;
     }
-
-    if (!window.confirm(`¿Marcar como terminados los ${trabajosPendientes.length} trabajos pendientes?`)) return;
+    const n = elegidos.length;
+    const ok = await confirmar({
+      titulo: `¿Finalizar ${n} trabajo${n !== 1 ? 's' : ''}?`,
+      mensaje: 'Quedarán en estado Terminado.',
+      detalle: elegidos.map(t => {
+        const clinica = clinicas.find(c => c.id === t.clinica_id);
+        return `${t.paciente}${clinica ? ` · ${clinica.nombre}` : ''}`;
+      }),
+      textoConfirmar: 'Finalizar'
+    });
+    if (!ok) return;
 
     try {
       setCargando(true);
-      const ids = trabajosPendientes.flatMap(t => t.ids);
+      const ids = elegidos.flatMap(t => t.ids);
       const { error } = esLaboratorista
         ? await supabase.rpc('cambiar_estado_trabajos', { p_ids: ids, p_estado: 'terminado' })
         : await supabase
@@ -456,10 +478,11 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       setTrabajos(prev =>
         prev.map(t => ids.includes(t.id) ? { ...t, estado: 'terminado' } : t)
       );
-      alert('✅ Todos los trabajos marcados como terminados');
+      setSeleccionados(new Set());
+      avisar(`${n} trabajo${n !== 1 ? 's' : ''} marcado${n !== 1 ? 's' : ''} como terminado${n !== 1 ? 's' : ''}`, 'exito');
     } catch (error) {
       console.error('Error finalizando trabajos:', error);
-      alert('❌ ' + mensajeDeError(error, 'Error al finalizar trabajos'));
+      avisar(mensajeDeError(error, 'Error al finalizar los trabajos'), 'error');
     } finally {
       setCargando(false);
     }
@@ -1183,6 +1206,33 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       minWidth: 0,
       fontSize: '0.875rem',
     } as React.CSSProperties,
+    checkboxTrabajo: {
+      width: '18px',
+      height: '18px',
+      flex: '0 0 18px',
+      cursor: 'pointer',
+      accentColor: '#2563eb'
+    } as React.CSSProperties,
+    barraSeleccion: {
+      position: 'fixed',
+      left: '50%',
+      bottom: '16px',
+      transform: 'translateX(-50%)',
+      width: 'calc(100% - 32px)',
+      maxWidth: '640px',
+      boxSizing: 'border-box',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '0.75rem',
+      flexWrap: 'wrap',
+      padding: '0.75rem 1rem',
+      backgroundColor: '#0f172a',
+      color: 'white',
+      borderRadius: '12px',
+      boxShadow: '0 10px 30px rgba(15,23,42,0.35)',
+      zIndex: 900
+    } as React.CSSProperties,
     trabajoLabel: {
       fontSize: '0.7rem',
       color: '#64748b',
@@ -1270,7 +1320,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
   };
 
   return (
-    <div style={styles.container}>
+    <div style={{ ...styles.container, paddingBottom: seleccionados.size > 0 ? '96px' : undefined }}>
       <Header
         user={user}
         onLogout={handleLogout}
@@ -1445,12 +1495,6 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
               <div key={clinicaId} style={styles.clinicaSection}>
                 <div style={styles.clinicaHeader}>
                   <h2 style={styles.clinicaNombre}>🏥 {clinica?.nombre || 'Clínica sin nombre'}</h2>
-                  <button
-                    style={styles.buttonSmall}
-                    onClick={() => finalizarTodosTrabajosClinica(clinicaId)}
-                  >
-                    ✅ Finalizar todos
-                  </button>
                 </div>
 
                 {Object.entries(pacientes).map(([pacienteNombre, data]) => (
@@ -1465,7 +1509,19 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                     {data.trabajos.map((trabajo) => {
                       const dentista = dentistas.find(d => d.id === trabajo.dentista_id);
                       return (
-                        <div key={trabajo.ids.join('-')} style={styles.trabajoCard}>
+                        <div key={trabajo.ids.join('-')} style={{
+                          ...styles.trabajoCard,
+                          ...(seleccionados.has(claveTrabajo(trabajo)) ? { backgroundColor: '#eff6ff', border: '1px solid #93c5fd' } : {})
+                        }}>
+                          <input
+                            type="checkbox"
+                            style={styles.checkboxTrabajo}
+                            checked={seleccionados.has(claveTrabajo(trabajo))}
+                            disabled={!sePuedeFinalizar(trabajo)}
+                            onChange={() => alternarSeleccion(claveTrabajo(trabajo))}
+                            title={sePuedeFinalizar(trabajo) ? 'Seleccionar para finalizar' : 'Ya está terminado o entregado'}
+                            aria-label={`Seleccionar trabajo de ${trabajo.paciente}`}
+                          />
                           <div style={{ ...styles.trabajoColumn, flex: '1.5' }}>
                             <div style={styles.trabajoLabel}>Dentista</div>
                             <div style={styles.trabajoValue}>{dentista?.nombre || 'N/A'}</div>
@@ -1527,6 +1583,30 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           })
         )}
       </div>
+
+      {/* BARRA DE SELECCIÓN: aparece al marcar trabajos */}
+      {seleccionados.size > 0 && (
+        <div style={styles.barraSeleccion} role="region" aria-label="Trabajos seleccionados">
+          <span style={{ fontWeight: 600 }}>
+            {seleccionados.size} seleccionado{seleccionados.size !== 1 ? 's' : ''}
+          </span>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              style={{ padding: '0.5rem 0.875rem', borderRadius: '8px', border: '1px solid #475569', background: 'transparent', color: 'white', cursor: 'pointer', fontWeight: 600 }}
+              onClick={() => setSeleccionados(new Set())}
+            >
+              Limpiar selección
+            </button>
+            <button
+              style={{ padding: '0.5rem 0.875rem', borderRadius: '8px', border: 'none', background: '#10b981', color: 'white', cursor: 'pointer', fontWeight: 600 }}
+              onClick={finalizarSeleccionados}
+              disabled={cargando}
+            >
+              ✅ Finalizar seleccionados
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE NOTAS */}
       {modalNotasAbierto && trabajoConNotas && (
