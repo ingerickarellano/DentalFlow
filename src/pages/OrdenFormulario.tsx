@@ -4,14 +4,8 @@ import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
 import { QRCodeSVG } from 'qrcode.react';
 import { useDialogos } from '../components/ui/Dialogos';
-
-// Tipos para superficies y piezas dentales
-type Superficie = 'oclusal' | 'mesial' | 'distal' | 'vestibular' | 'lingual';
-type TipoTrabajo = 'incrustacion' | 'corona' | 'puente' | null;
-
-interface PiezaDental {
-  superficies: Record<Superficie, TipoTrabajo>;
-}
+import Odontograma, { PiezaDental, crearPiezaVacia, TODOS_LOS_DIENTES } from '../components/ordenes/Odontograma';
+import { useMediaQuery, BREAKPOINTS } from '../hooks/useMediaQuery';
 
 // Datos de la orden
 interface OrdenData {
@@ -63,20 +57,44 @@ interface OrdenData {
   piezas: Record<number, PiezaDental>;
 }
 
-// Números de dientes (FDI)
-const dientesSuperiores = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
-const dientesInferiores = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
-const todosDientes = [...dientesSuperiores, ...dientesInferiores];
+// ================== PIEZAS DE PRESENTACIÓN (fuera del componente para que los campos no pierdan el foco) ==================
+const Opciones = ({ valor, opciones, onCambiar }: { valor: string; opciones: { valor: string; texto: string }[]; onCambiar: (v: string) => void }) => (
+  <div style={ui.opciones} role="radiogroup">
+    {opciones.map(o => {
+      const activo = valor === o.valor;
+      return (
+        <button key={o.valor} type="button" role="radio" aria-checked={activo}
+          style={{ ...ui.opcion, ...(activo ? ui.opcionActiva : {}) }}
+          onClick={() => onCambiar(activo ? '' : o.valor)}>
+          {o.texto}
+        </button>
+      );
+    })}
+  </div>
+);
 
-const crearPiezaVacia = (): PiezaDental => ({
-  superficies: {
-    oclusal: null,
-    mesial: null,
-    distal: null,
-    vestibular: null,
-    lingual: null,
-  },
-});
+// Interruptor tipo chip para los sí/no
+const Chip = ({ activo, texto, onCambiar }: { activo: boolean; texto: string; onCambiar: (v: boolean) => void }) => (
+  <button type="button" role="switch" aria-checked={activo}
+    style={{ ...ui.chip, ...(activo ? ui.chipActivo : {}) }}
+    onClick={() => onCambiar(!activo)}>
+    {activo ? '✓ ' : ''}{texto}
+  </button>
+);
+
+const Campo = ({ etiqueta, children, ancho }: { etiqueta: string; children: React.ReactNode; ancho?: boolean }) => (
+  <label style={{ ...ui.campo, ...(ancho ? { gridColumn: '1 / -1' } : {}) }}>
+    <span style={ui.campoLabel}>{etiqueta}</span>
+    {children}
+  </label>
+);
+
+const Seccion = ({ titulo, icono, children, ancho }: { titulo: string; icono: string; children: React.ReactNode; ancho?: boolean }) => (
+  <section style={{ ...ui.tarjeta, ...(ancho ? { gridColumn: '1 / -1' } : {}) }}>
+    <h2 style={ui.seccionTitulo}><span aria-hidden>{icono}</span> {titulo}</h2>
+    {children}
+  </section>
+);
 
 const OrdenFormulario: React.FC = () => {
   const { avisar } = useDialogos();
@@ -89,10 +107,11 @@ const OrdenFormulario: React.FC = () => {
   const [usuario, setUsuario] = useState<any>({ nombre: 'Cargando...' });
   const [trabajoId, setTrabajoId] = useState<string | null>(null);
   const [configLaboratorio, setConfigLaboratorio] = useState<any>(null);
-  const [dienteEnEdicion, setDienteEnEdicion] = useState<number | null>(null);
   // Laboratorista: la orden va sobre un trabajo que ya existe y sin montos
   const [esLaboratorista, setEsLaboratorista] = useState(false);
   const [trabajosDisponibles, setTrabajosDisponibles] = useState<any[]>([]);
+  const [nombreLaboratorio, setNombreLaboratorio] = useState('');
+  const esCompacto = useMediaQuery(BREAKPOINTS.tablet);
 
   const [formData, setFormData] = useState<OrdenData>({
     paciente: '',
@@ -101,7 +120,7 @@ const OrdenFormulario: React.FC = () => {
     laboratorista_id: '',
     fecha_entrega_estimada: '',
     notas: '',
-    protesista_nombre: 'Selene Embati López y Teresa Castillo Saldaña',
+    protesista_nombre: '',
     doctor_nombre: '',
     direccion: '',
     cp: '',
@@ -137,7 +156,7 @@ const OrdenFormulario: React.FC = () => {
   useEffect(() => {
     if (Object.keys(formData.piezas).length === 0) {
       const piezasIniciales: Record<number, PiezaDental> = {};
-      todosDientes.forEach(num => {
+      TODOS_LOS_DIENTES.forEach(num => {
         piezasIniciales[num] = crearPiezaVacia();
       });
       setFormData(prev => ({ ...prev, piezas: piezasIniciales }));
@@ -161,10 +180,14 @@ const OrdenFormulario: React.FC = () => {
         .eq('id', user.id)
         .single();
 
+      const nombreUsuario = perfil?.nombre || user.user_metadata?.nombre || user.email?.split('@')[0] || 'Usuario';
+      // Orden nueva: el protesista por defecto es quien la crea
+      if (!id) setFormData(prev => ({ ...prev, protesista_nombre: prev.protesista_nombre || nombreUsuario }));
+
       setUsuario({
         id: user.id,
         email: user.email!,
-        nombre: perfil?.nombre || user.user_metadata?.nombre || user.email?.split('@')[0] || 'Usuario',
+        nombre: nombreUsuario,
         rol: perfil?.rol || user.user_metadata?.rol || 'cliente',
         laboratorio: perfil?.laboratorio || user.user_metadata?.laboratorio,
         telefono: perfil?.telefono || user.user_metadata?.telefono,
@@ -174,8 +197,13 @@ const OrdenFormulario: React.FC = () => {
         .from('configuracion_laboratorio')
         .select('*')
         .eq('usuario_id', user.id)
-        .single();
+        .maybeSingle();
       setConfigLaboratorio(config);
+
+      // Nombre del laboratorio con que se registró (si no configuró uno)
+      const { data: memb } = await supabase.rpc('mi_membresia');
+      const filaMemb = Array.isArray(memb) ? memb[0] : memb;
+      setNombreLaboratorio(filaMemb?.laboratorio || '');
 
       const [clinicasRes, dentistasRes, laboratoristasRes] = await Promise.all([
         supabase.from('clinicas').select('id,nombre'),
@@ -244,7 +272,7 @@ const OrdenFormulario: React.FC = () => {
           laboratorista_id: data.trabajo?.laboratorista_id || '',
           fecha_entrega_estimada: data.trabajo?.fecha_entrega_estimada || '',
           notas: data.trabajo?.notas || '',
-          protesista_nombre: data.protesista_nombre || 'Selene Embati López y Teresa Castillo Saldaña',
+          protesista_nombre: data.protesista_nombre || '',
           doctor_nombre: data.doctor_nombre || '',
           direccion: data.direccion || '',
           cp: data.cp || '',
@@ -286,21 +314,6 @@ const OrdenFormulario: React.FC = () => {
     setFormData(prev => ({ ...prev, [campo]: valor }));
   };
 
-  const handleSuperficieChange = (diente: number, superficie: Superficie, tipo: TipoTrabajo) => {
-    setFormData(prev => ({
-      ...prev,
-      piezas: {
-        ...prev.piezas,
-        [diente]: {
-          ...prev.piezas[diente],
-          superficies: {
-            ...prev.piezas[diente].superficies,
-            [superficie]: tipo,
-          },
-        },
-      },
-    }));
-  };
 
   // Campos técnicos de la orden (sin dueño, trabajo ni montos)
   const camposTecnicos = () => ({
@@ -435,279 +448,13 @@ const OrdenFormulario: React.FC = () => {
     }
   };
 
-  // Determinar si un diente tiene alguna superficie seleccionada
-  const dienteTieneSeleccion = (num: number): boolean => {
-    const pieza = formData.piezas[num];
-    if (!pieza) return false;
-    return Object.values(pieza.superficies).some(v => v !== null);
-  };
+  // ================== PRESENTACIÓN ==================
+  const texto = (campo: keyof OrdenData, placeholder?: string) => (
+    <input type="text" style={ui.input} value={(formData[campo] as string) || ''} placeholder={placeholder}
+      onChange={(e) => handleChange(campo, e.target.value)} />
+  );
 
-  // ================== ESTILOS COMPACTOS EN BLANCO Y NEGRO ==================
-  interface Styles {
-    container: React.CSSProperties;
-    paper: React.CSSProperties;
-    header: React.CSSProperties;
-    headerLeft: React.CSSProperties;
-    headerRight: React.CSSProperties;
-    title: React.CSSProperties;
-    subtitle: React.CSSProperties;
-    twoColumnLayout: React.CSSProperties;
-    column: React.CSSProperties;
-    section: React.CSSProperties;
-    sectionTitle: React.CSSProperties;
-    grid2: React.CSSProperties;
-    grid3: React.CSSProperties;
-    field: React.CSSProperties;
-    label: React.CSSProperties;
-    input: React.CSSProperties;
-    checkboxGroup: React.CSSProperties;
-    checkboxLabel: React.CSSProperties;
-    radioGroup: React.CSSProperties;
-    dentaduraContainer: React.CSSProperties;
-    arcada: React.CSSProperties;
-    arcadaLabel: React.CSSProperties;
-    dientesGrid: React.CSSProperties;
-    dienteButton: (tieneSeleccion: boolean) => React.CSSProperties;
-    leyenda: React.CSSProperties;
-    leyendaItem: (color: string) => React.CSSProperties;
-    colorBox: React.CSSProperties;
-    buttonPrimary: React.CSSProperties;
-    buttonSecondary: React.CSSProperties;
-    modalOverlay: React.CSSProperties;
-    modalContent: React.CSSProperties;
-    superficieItem: React.CSSProperties;
-    superficieLabel: React.CSSProperties;
-    superficieSelect: React.CSSProperties;
-  }
-
-  const styles: Styles = {
-    container: {
-      maxWidth: '1200px',
-      margin: '0 auto',
-      padding: '10px',
-      fontFamily: 'Arial, sans-serif',
-    },
-    paper: {
-      backgroundColor: '#ffffff',
-      border: '1px solid #000',
-      padding: '15px',
-      marginBottom: '10px',
-    },
-    header: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '15px',
-      borderBottom: '1px solid #000',
-      paddingBottom: '10px',
-    },
-    headerLeft: {
-      flex: 1,
-    },
-    headerRight: {
-      textAlign: 'center',
-    },
-    title: {
-      fontSize: '1.5rem',
-      fontWeight: 'bold',
-      color: '#000',
-      margin: '0 0 2px 0',
-    },
-    subtitle: {
-      fontSize: '0.8rem',
-      color: '#333',
-    },
-    twoColumnLayout: {
-      display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
-      gap: '15px',
-    },
-    column: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '10px',
-    },
-    section: {
-      border: '1px solid #000',
-      padding: '10px',
-      backgroundColor: '#fff',
-    },
-    sectionTitle: {
-      fontSize: '1rem',
-      fontWeight: 'bold',
-      color: '#000',
-      marginBottom: '8px',
-      borderBottom: '1px solid #000',
-      paddingBottom: '4px',
-    },
-    grid2: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: '8px',
-    },
-    grid3: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(3, 1fr)',
-      gap: '8px',
-    },
-    field: {
-      marginBottom: '6px',
-    },
-    label: {
-      display: 'block',
-      marginBottom: '2px',
-      fontWeight: 'bold',
-      color: '#000',
-      fontSize: '0.8rem',
-    },
-    input: {
-      width: '100%',
-      padding: '4px 6px',
-      border: '1px solid #000',
-      borderRadius: '0',
-      fontSize: '0.8rem',
-      backgroundColor: '#fff',
-      color: '#000',
-      boxSizing: 'border-box',
-    },
-    checkboxGroup: {
-      display: 'flex',
-      gap: '10px',
-      flexWrap: 'wrap',
-      alignItems: 'center',
-    },
-    checkboxLabel: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '3px',
-      fontSize: '0.8rem',
-      cursor: 'pointer',
-    },
-    radioGroup: {
-      display: 'flex',
-      gap: '10px',
-      flexWrap: 'wrap',
-    },
-    dentaduraContainer: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '10px',
-      marginTop: '5px',
-    },
-    arcada: {
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-    },
-    arcadaLabel: {
-      fontWeight: 'bold',
-      marginBottom: '5px',
-      color: '#000',
-      fontSize: '0.8rem',
-    },
-    dientesGrid: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(8, 1fr)',
-      gap: '4px',
-      maxWidth: '450px',
-      margin: '0 auto',
-    },
-    dienteButton: (tieneSeleccion: boolean): React.CSSProperties => ({
-      width: '35px',
-      height: '35px',
-      border: tieneSeleccion ? '2px solid #000' : '1px solid #000',
-      backgroundColor: tieneSeleccion ? '#ccc' : '#fff',
-      color: '#000',
-      fontWeight: 'bold',
-      fontSize: '11px',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      transition: 'none',
-      boxShadow: 'none',
-    }),
-    leyenda: {
-      display: 'flex',
-      gap: '15px',
-      justifyContent: 'center',
-      marginTop: '8px',
-      fontSize: '0.75rem',
-    },
-    leyendaItem: (color: string): React.CSSProperties => ({
-      display: 'flex',
-      alignItems: 'center',
-      gap: '3px',
-      color: '#000',
-    }),
-    colorBox: {
-      width: '12px',
-      height: '12px',
-      border: '1px solid #000',
-      backgroundColor: '#fff',
-    },
-    buttonPrimary: {
-      backgroundColor: '#000',
-      color: '#fff',
-      padding: '6px 12px',
-      border: '1px solid #000',
-      borderRadius: '0',
-      fontSize: '0.8rem',
-      fontWeight: 'bold',
-      cursor: 'pointer',
-    },
-    buttonSecondary: {
-      backgroundColor: '#fff',
-      color: '#000',
-      padding: '6px 12px',
-      border: '1px solid #000',
-      borderRadius: '0',
-      fontSize: '0.8rem',
-      fontWeight: 'bold',
-      cursor: 'pointer',
-    },
-    modalOverlay: {
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-    },
-    modalContent: {
-      backgroundColor: '#fff',
-      padding: '15px',
-      border: '1px solid #000',
-      maxWidth: '400px',
-      width: '90%',
-      maxHeight: '80vh',
-      overflowY: 'auto',
-    },
-    superficieItem: {
-      marginBottom: '8px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-    },
-    superficieLabel: {
-      width: '80px',
-      fontWeight: 'bold',
-      fontSize: '0.8rem',
-      textTransform: 'capitalize',
-    },
-    superficieSelect: {
-      padding: '3px 6px',
-      border: '1px solid #000',
-      borderRadius: '0',
-      flex: 1,
-      fontSize: '0.8rem',
-      backgroundColor: '#fff',
-    },
-  };
+  const datosLab = [configLaboratorio?.direccion, configLaboratorio?.telefono].filter(Boolean).join(' · ');
 
   return (
     <>
@@ -719,625 +466,224 @@ const OrdenFormulario: React.FC = () => {
         title={id ? 'Editar Orden de Trabajo' : 'Nueva Orden de Trabajo'}
         showTitle={true}
       />
-      <div style={styles.container}>
+      <div style={ui.pagina}>
         <form onSubmit={handleSubmit}>
-          <div style={styles.paper}>
-            {/* Encabezado con nombre del laboratorio y QR */}
-            <div style={styles.header}>
-              <div style={styles.headerLeft}>
-                <h1 style={styles.title}>
-                  {configLaboratorio?.nombre_laboratorio || 'Laboratorio Dental'}
-                </h1>
-                <p style={styles.subtitle}>
-                  {configLaboratorio?.direccion} | {configLaboratorio?.telefono}
-                </p>
+          {/* Encabezado: laboratorio y QR del trabajo */}
+          <div style={{ ...ui.tarjeta, ...ui.encabezado }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={ui.encabezadoEtiqueta}>{id ? 'Editar orden de trabajo' : 'Nueva orden de trabajo'}</div>
+              <h1 style={ui.encabezadoTitulo}>{configLaboratorio?.nombre_laboratorio || nombreLaboratorio || 'Laboratorio'}</h1>
+              {datosLab && <div style={ui.encabezadoDatos}>{datosLab}</div>}
+            </div>
+            {id && trabajoId && (
+              <div style={ui.qr}>
+                <QRCodeSVG value={trabajoId} size={64} />
+                <span style={{ fontSize: '0.65rem', color: '#64748b' }}>ID: {trabajoId.slice(0, 8)}</span>
               </div>
-              {id && trabajoId && (
-                <div style={styles.headerRight}>
-                  <QRCodeSVG value={trabajoId} size={60} />
-                  <p style={{ fontSize: '0.6rem', marginTop: '2px' }}>
-                    ID: {trabajoId.slice(0, 8)}
+            )}
+          </div>
+
+          <div style={{ ...ui.grilla, gridTemplateColumns: esCompacto ? '1fr' : 'repeat(2, minmax(0, 1fr))' }}>
+            {/* Datos del caso */}
+            <Seccion titulo="Datos del caso" icono="📋" ancho>
+              {esLaboratorista && !id && (
+                <div style={{ marginBottom: '0.875rem' }}>
+                  <Campo etiqueta="Trabajo *">
+                    <select style={ui.input} value={trabajoId || ''} onChange={(e) => seleccionarTrabajo(e.target.value)} required>
+                      <option value="">Seleccionar trabajo</option>
+                      {trabajosDisponibles.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.paciente} — {t.clinica_nombre || 'Sin clínica'} — {new Date(t.fecha_creacion).toLocaleDateString()}
+                        </option>
+                      ))}
+                    </select>
+                  </Campo>
+                  <p style={ui.ayuda}>
+                    {trabajosDisponibles.length === 0
+                      ? 'No tienes trabajos sin orden. Primero crea el trabajo en "Crear Lista de Trabajo".'
+                      : 'La orden se agrega a un trabajo ya creado. Paciente, clínica y dentista vienen del trabajo.'}
                   </p>
                 </div>
               )}
-            </div>
+              <div style={ui.campos}>
+                <Campo etiqueta="Paciente *">
+                  <input type="text" style={ui.input} value={formData.paciente} required disabled={esLaboratorista}
+                    onChange={(e) => handleChange('paciente', e.target.value)} />
+                </Campo>
+                <Campo etiqueta="Clínica *">
+                  <select style={ui.input} value={formData.clinica_id} required disabled={esLaboratorista}
+                    onChange={(e) => handleChange('clinica_id', e.target.value)}>
+                    <option value="">Seleccionar</option>
+                    {clinicas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                </Campo>
+                <Campo etiqueta="Dentista *">
+                  <select style={ui.input} value={formData.dentista_id} required={!esLaboratorista} disabled={esLaboratorista}
+                    onChange={(e) => handleChange('dentista_id', e.target.value)}>
+                    <option value="">Seleccionar</option>
+                    {dentistas.filter(d => !formData.clinica_id || d.clinica_id === formData.clinica_id)
+                      .map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+                  </select>
+                </Campo>
+                <Campo etiqueta="Laboratorista">
+                  <select style={ui.input} value={formData.laboratorista_id} disabled={esLaboratorista}
+                    onChange={(e) => handleChange('laboratorista_id', e.target.value)}>
+                    <option value="">Sin asignar</option>
+                    {laboratoristas.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                  </select>
+                </Campo>
+                <Campo etiqueta="Fecha de entrega estimada">
+                  <input type="date" style={ui.input} value={formData.fecha_entrega_estimada} disabled={esLaboratorista}
+                    onChange={(e) => handleChange('fecha_entrega_estimada', e.target.value)} />
+                </Campo>
+                <Campo etiqueta="Protesista">{texto('protesista_nombre')}</Campo>
+                <Campo etiqueta="Doctor">{texto('doctor_nombre')}</Campo>
+                <Campo etiqueta="Teléfono">{texto('telefono')}</Campo>
+                <Campo etiqueta="Dirección">{texto('direccion')}</Campo>
+                <Campo etiqueta="CP">{texto('cp')}</Campo>
+              </div>
+            </Seccion>
 
-            {/* Dos columnas */}
-            <div style={styles.twoColumnLayout}>
-              {/* Columna izquierda */}
-              <div style={styles.column}>
-                {/* Datos del caso */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>📋 Datos del caso</h3>
-                  {esLaboratorista && !id && (
-                    <div style={{ ...styles.field, marginBottom: '10px' }}>
-                      <label style={styles.label}>Trabajo *</label>
-                      <select
-                        style={styles.input}
-                        value={trabajoId || ''}
-                        onChange={(e) => seleccionarTrabajo(e.target.value)}
-                        required
-                      >
-                        <option value="">Seleccionar trabajo</option>
-                        {trabajosDisponibles.map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.paciente} — {t.clinica_nombre || 'Sin clínica'} — {new Date(t.fecha_creacion).toLocaleDateString()}
-                          </option>
-                        ))}
-                      </select>
-                      <p style={{ fontSize: '0.7rem', color: '#333', margin: '3px 0 0' }}>
-                        {trabajosDisponibles.length === 0
-                          ? 'No tienes trabajos sin orden. Primero crea el trabajo en "Crear Lista de Trabajo".'
-                          : 'La orden se agrega a un trabajo ya creado. Paciente, clínica y dentista vienen del trabajo.'}
-                      </p>
-                    </div>
+            {/* Odontograma */}
+            <Seccion titulo="Selección de piezas" icono="🦷" ancho>
+              <p style={ui.ayuda}>Toca un diente para indicar qué se hace en cada cara.</p>
+              <Odontograma piezas={formData.piezas} compacto={esCompacto}
+                onChange={(piezas) => handleChange('piezas', piezas)} />
+            </Seccion>
+
+            <Seccion titulo="Análisis" icono="🔍">
+              <div style={ui.campos1}>
+                <Campo etiqueta="Impresión">
+                  <Opciones valor={formData.analisis_impresion} onCambiar={(v) => handleChange('analisis_impresion', v)} opciones={[{ valor: 'buena', texto: 'Buena' }, { valor: 'regular', texto: 'Regular' }, { valor: 'mala', texto: 'Mala' }]} />
+                </Campo>
+                <Campo etiqueta="Modelo">
+                  <Opciones valor={formData.analisis_modelo} onCambiar={(v) => handleChange('analisis_modelo', v)} opciones={[{ valor: 'buena', texto: 'Buena' }, { valor: 'regular', texto: 'Regular' }, { valor: 'mala', texto: 'Mala' }]} />
+                </Campo>
+                <div style={ui.enLinea}>
+                  <Chip activo={!!formData.aporta_registros} onCambiar={(v) => handleChange('aporta_registros', v)} texto="Aporta registros" />
+                  {formData.aporta_registros && (
+                    <input type="text" style={{ ...ui.input, flex: '1 1 160px' }} placeholder="¿Cuáles?"
+                      value={formData.cuales_registros} onChange={(e) => handleChange('cuales_registros', e.target.value)} />
                   )}
-                  <div style={styles.grid2}>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Protesista</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.protesista_nombre}
-                        onChange={(e) => handleChange('protesista_nombre', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Doctor</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.doctor_nombre}
-                        onChange={(e) => handleChange('doctor_nombre', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Dirección</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.direccion}
-                        onChange={(e) => handleChange('direccion', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>CP</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.cp}
-                        onChange={(e) => handleChange('cp', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Teléfono</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.telefono}
-                        onChange={(e) => handleChange('telefono', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Paciente *</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.paciente}
-                        onChange={(e) => handleChange('paciente', e.target.value)}
-                        required
-                        disabled={esLaboratorista}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Clínica *</label>
-                      <select
-                        style={styles.input}
-                        value={formData.clinica_id}
-                        onChange={(e) => handleChange('clinica_id', e.target.value)}
-                        required
-                        disabled={esLaboratorista}
-                      >
-                        <option value="">Seleccionar</option>
-                        {clinicas.map(c => (
-                          <option key={c.id} value={c.id}>{c.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Dentista *</label>
-                      <select
-                        style={styles.input}
-                        value={formData.dentista_id}
-                        onChange={(e) => handleChange('dentista_id', e.target.value)}
-                        required={!esLaboratorista}
-                        disabled={esLaboratorista}
-                      >
-                        <option value="">Seleccionar</option>
-                        {dentistas
-                          .filter(d => !formData.clinica_id || d.clinica_id === formData.clinica_id)
-                          .map(d => (
-                            <option key={d.id} value={d.id}>{d.nombre}</option>
-                          ))}
-                      </select>
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Laboratorista</label>
-                      <select
-                        style={styles.input}
-                        value={formData.laboratorista_id}
-                        onChange={(e) => handleChange('laboratorista_id', e.target.value)}
-                        disabled={esLaboratorista}
-                      >
-                        <option value="">Sin asignar</option>
-                        {laboratoristas.map(l => (
-                          <option key={l.id} value={l.id}>{l.nombre}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Fecha entrega estimada</label>
-                      <input
-                        type="date"
-                        style={styles.input}
-                        value={formData.fecha_entrega_estimada}
-                        onChange={(e) => handleChange('fecha_entrega_estimada', e.target.value)}
-                        disabled={esLaboratorista}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Análisis de impresión y modelo */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>🔍 Análisis</h3>
-                  <div style={styles.grid2}>
-                    <div>
-                      <label style={styles.label}>Impresión</label>
-                      <div style={styles.radioGroup}>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="analisis_impresion"
-                            value="buena"
-                            checked={formData.analisis_impresion === 'buena'}
-                            onChange={(e) => handleChange('analisis_impresion', e.target.value)}
-                          /> Buena
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="analisis_impresion"
-                            value="regular"
-                            checked={formData.analisis_impresion === 'regular'}
-                            onChange={(e) => handleChange('analisis_impresion', e.target.value)}
-                          /> Regular
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="analisis_impresion"
-                            value="mala"
-                            checked={formData.analisis_impresion === 'mala'}
-                            onChange={(e) => handleChange('analisis_impresion', e.target.value)}
-                          /> Mala
-                        </label>
-                      </div>
-                    </div>
-                    <div>
-                      <label style={styles.label}>Modelo</label>
-                      <div style={styles.radioGroup}>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="analisis_modelo"
-                            value="buena"
-                            checked={formData.analisis_modelo === 'buena'}
-                            onChange={(e) => handleChange('analisis_modelo', e.target.value)}
-                          /> Buena
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="analisis_modelo"
-                            value="regular"
-                            checked={formData.analisis_modelo === 'regular'}
-                            onChange={(e) => handleChange('analisis_modelo', e.target.value)}
-                          /> Regular
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="analisis_modelo"
-                            value="mala"
-                            checked={formData.analisis_modelo === 'mala'}
-                            onChange={(e) => handleChange('analisis_modelo', e.target.value)}
-                          /> Mala
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <label style={styles.checkboxLabel}>
-                      <input
-                        type="checkbox"
-                        checked={formData.aporta_registros}
-                        onChange={(e) => handleChange('aporta_registros', e.target.checked)}
-                      /> Aporta registros
-                    </label>
-                    {formData.aporta_registros && (
-                      <input
-                        type="text"
-                        placeholder="¿Cuáles?"
-                        style={{ ...styles.input, width: '180px' }}
-                        value={formData.cuales_registros}
-                        onChange={(e) => handleChange('cuales_registros', e.target.value)}
-                      />
-                    )}
-                  </div>
-                </div>
-
-                {/* Articulación */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>🦷 Articulación</h3>
-                  <div style={styles.grid3}>
-                    <div>
-                      <label style={styles.label}>Tipo</label>
-                      <div>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="articulado"
-                            value="no_ajustable"
-                            checked={formData.articulado === 'no_ajustable'}
-                            onChange={(e) => handleChange('articulado', e.target.value)}
-                          /> No aj.
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="articulado"
-                            value="semi_ajustable"
-                            checked={formData.articulado === 'semi_ajustable'}
-                            onChange={(e) => handleChange('articulado', e.target.value)}
-                          /> Semi aj.
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="radio"
-                            name="articulado"
-                            value="totalmente_ajustable"
-                            checked={formData.articulado === 'totalmente_ajustable'}
-                            onChange={(e) => handleChange('articulado', e.target.value)}
-                          /> Total aj.
-                        </label>
-                      </div>
-                    </div>
-                    <div>
-                      <label style={styles.label}>Características</label>
-                      <div>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="checkbox"
-                            checked={formData.metalica}
-                            onChange={(e) => handleChange('metalica', e.target.checked)}
-                          /> Metálica
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="checkbox"
-                            checked={formData.estetica}
-                            onChange={(e) => handleChange('estetica', e.target.checked)}
-                          /> Estética
-                        </label>
-                      </div>
-                    </div>
-                    <div>
-                      <label style={styles.label}>Especificaciones</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.especificaciones}
-                        onChange={(e) => handleChange('especificaciones', e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Prótesis removible */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>🔄 Prótesis removible</h3>
-                  <div>
-                    <label style={styles.checkboxLabel}>
-                      <input
-                        type="checkbox"
-                        checked={formData.protesis_removible}
-                        onChange={(e) => handleChange('protesis_removible', e.target.checked)}
-                      /> Sí
-                    </label>
-                    {formData.protesis_removible && (
-                      <div style={{ marginTop: '5px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="checkbox"
-                            checked={formData.protesis_total}
-                            onChange={(e) => handleChange('protesis_total', e.target.checked)}
-                          /> Total
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="checkbox"
-                            checked={formData.protesis_parcial}
-                            onChange={(e) => handleChange('protesis_parcial', e.target.checked)}
-                          /> Parcial
-                        </label>
-                        <label style={styles.checkboxLabel}>
-                          <input
-                            type="checkbox"
-                            checked={formData.removable}
-                            onChange={(e) => handleChange('removable', e.target.checked)}
-                          /> Removable
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Diseño esqueleto"
-                          style={{ ...styles.input, width: '180px' }}
-                          value={formData.diseno_esqueleto}
-                          onChange={(e) => handleChange('diseno_esqueleto', e.target.value)}
-                        />
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
+            </Seccion>
 
-              {/* Columna derecha */}
-              <div style={styles.column}>
-                {/* Selector de dientes con superficies */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>🦷 Selección de piezas</h3>
-                  <p style={{ fontSize: '0.75rem', marginBottom: '5px' }}>
-                    Clic en diente: <strong>rojo</strong> incrustación, <strong>azul</strong> corona, <strong>verde</strong> puente.
-                  </p>
-
-                  <div style={styles.dentaduraContainer}>
-                    {/* Arcada superior */}
-                    <div style={styles.arcada}>
-                      <div style={styles.arcadaLabel}>Superiores</div>
-                      <div style={styles.dientesGrid}>
-                        {dientesSuperiores.map(num => (
-                          <button
-                            key={num}
-                            type="button"
-                            style={styles.dienteButton(dienteTieneSeleccion(num))}
-                            onClick={() => setDienteEnEdicion(num)}
-                          >
-                            {num}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Arcada inferior */}
-                    <div style={styles.arcada}>
-                      <div style={styles.arcadaLabel}>Inferiores</div>
-                      <div style={styles.dientesGrid}>
-                        {dientesInferiores.map(num => (
-                          <button
-                            key={num}
-                            type="button"
-                            style={styles.dienteButton(dienteTieneSeleccion(num))}
-                            onClick={() => setDienteEnEdicion(num)}
-                          >
-                            {num}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+            <Seccion titulo="Articulación" icono="⚙️">
+              <div style={ui.campos1}>
+                <Campo etiqueta="Tipo de articulador">
+                  <Opciones valor={formData.articulado} onCambiar={(v) => handleChange('articulado', v)} opciones={[
+                    { valor: 'no_ajustable', texto: 'No ajustable' },
+                    { valor: 'semi_ajustable', texto: 'Semi ajustable' },
+                    { valor: 'totalmente_ajustable', texto: 'Totalmente ajustable' }
+                  ]} />
+                </Campo>
+                <Campo etiqueta="Características">
+                  <div style={ui.enLinea}>
+                    <Chip activo={!!formData.metalica} onCambiar={(v) => handleChange('metalica', v)} texto="Metálica" />
+                    <Chip activo={!!formData.estetica} onCambiar={(v) => handleChange('estetica', v)} texto="Estética" />
                   </div>
+                </Campo>
+                <Campo etiqueta="Especificaciones">{texto('especificaciones')}</Campo>
+              </div>
+            </Seccion>
 
-                  <div style={styles.leyenda}>
-                    <div style={styles.leyendaItem('#ef4444')}>
-                      <span style={{ ...styles.colorBox, backgroundColor: '#ef4444' }} /> Incrust.
+            <Seccion titulo="Prótesis removible" icono="🔄">
+              <div style={ui.campos1}>
+                <div style={ui.enLinea}><Chip activo={!!formData.protesis_removible} onCambiar={(v) => handleChange('protesis_removible', v)} texto="Prótesis removible" /></div>
+                {formData.protesis_removible && (
+                  <>
+                    <div style={ui.enLinea}>
+                      <Chip activo={!!formData.protesis_total} onCambiar={(v) => handleChange('protesis_total', v)} texto="Total" />
+                      <Chip activo={!!formData.protesis_parcial} onCambiar={(v) => handleChange('protesis_parcial', v)} texto="Parcial" />
+                      <Chip activo={!!formData.removable} onCambiar={(v) => handleChange('removable', v)} texto="Removable" />
                     </div>
-                    <div style={styles.leyendaItem('#3b82f6')}>
-                      <span style={{ ...styles.colorBox, backgroundColor: '#3b82f6' }} /> Corona
-                    </div>
-                    <div style={styles.leyendaItem('#10b981')}>
-                      <span style={{ ...styles.colorBox, backgroundColor: '#10b981' }} /> Puente
-                    </div>
-                  </div>
-                </div>
-
-                {/* Modal para editar superficies de un diente */}
-                {dienteEnEdicion !== null && (
-                  <div style={styles.modalOverlay} onClick={() => setDienteEnEdicion(null)}>
-                    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-                      <h4 style={{ marginBottom: '10px' }}>Diente {dienteEnEdicion}</h4>
-                      {(['oclusal', 'mesial', 'distal', 'vestibular', 'lingual'] as Superficie[]).map(sup => {
-                        const tipoActual = formData.piezas[dienteEnEdicion]?.superficies[sup] || '';
-                        return (
-                          <div key={sup} style={styles.superficieItem}>
-                            <span style={styles.superficieLabel}>{sup}:</span>
-                            <select
-                              style={styles.superficieSelect}
-                              value={tipoActual}
-                              onChange={(e) => {
-                                const nuevoTipo = e.target.value as TipoTrabajo;
-                                handleSuperficieChange(dienteEnEdicion, sup, nuevoTipo || null);
-                              }}
-                            >
-                              <option value="">Ninguno</option>
-                              <option value="incrustacion">Incrustación</option>
-                              <option value="corona">Corona</option>
-                              <option value="puente">Puente</option>
-                            </select>
-                          </div>
-                        );
-                      })}
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                        <button
-                          type="button"
-                          style={styles.buttonSecondary}
-                          onClick={() => setDienteEnEdicion(null)}
-                        >
-                          Cerrar
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                    <Campo etiqueta="Diseño del esqueleto">{texto('diseno_esqueleto')}</Campo>
+                  </>
                 )}
-
-                {/* Materiales */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>⚙️ Materiales</h3>
-                  <div style={styles.grid2}>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Aleación</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.aleacion}
-                        onChange={(e) => handleChange('aleacion', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Material estético</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.material_estetico}
-                        onChange={(e) => handleChange('material_estetico', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Tipo póntico</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.tipo_pontico}
-                        onChange={(e) => handleChange('tipo_pontico', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Color</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.color}
-                        onChange={(e) => handleChange('color', e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ortodoncia */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>😁 Ortodoncia</h3>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-                    <label style={styles.checkboxLabel}>
-                      <input
-                        type="checkbox"
-                        checked={formData.ortodoncia_superior}
-                        onChange={(e) => handleChange('ortodoncia_superior', e.target.checked)}
-                      /> Superior
-                    </label>
-                    <label style={styles.checkboxLabel}>
-                      <input
-                        type="checkbox"
-                        checked={formData.ortodoncia_inferior}
-                        onChange={(e) => handleChange('ortodoncia_inferior', e.target.checked)}
-                      /> Inferior
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Aparato a realizar"
-                      style={{ ...styles.input, width: '180px' }}
-                      value={formData.aparato_realizar}
-                      onChange={(e) => handleChange('aparato_realizar', e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {/* Tipo de yeso y finalización */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>📅 Finalización</h3>
-                  <div style={styles.grid2}>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Tipo yeso</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.tipo_yeso}
-                        onChange={(e) => handleChange('tipo_yeso', e.target.value)}
-                      />
-                    </div>
-                    <div style={styles.field}>
-                      <label style={styles.label}>Fecha entrega</label>
-                      <input
-                        type="date"
-                        style={styles.input}
-                        value={formData.fecha_entrega}
-                        onChange={(e) => handleChange('fecha_entrega', e.target.value)}
-                      />
-                    </div>
-                    {!esLaboratorista && (
-                      <div style={styles.field}>
-                        <label style={styles.label}>Costo final</label>
-                        <input
-                          type="number"
-                          style={styles.input}
-                          value={formData.costo_final || ''}
-                          onChange={(e) => handleChange('costo_final', e.target.value ? Number(e.target.value) : null)}
-                        />
-                      </div>
-                    )}
-                    <div style={styles.field}>
-                      <label style={styles.label}>Firma</label>
-                      <input
-                        type="text"
-                        style={styles.input}
-                        value={formData.firma}
-                        onChange={(e) => handleChange('firma', e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Notas adicionales */}
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>📝 Notas</h3>
-                  <textarea
-                    style={{ ...styles.input, minHeight: '50px' }}
-                    value={formData.notas}
-                    onChange={(e) => handleChange('notas', e.target.value)}
-                  />
-                </div>
               </div>
-            </div>
+            </Seccion>
 
-            {/* Botones de acción */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '15px' }}>
-              <button
-                type="button"
-                style={styles.buttonSecondary}
-                onClick={() => navigate('/ordenes')}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                style={styles.buttonPrimary}
-                disabled={cargando}
-              >
-                {cargando ? 'Guardando...' : 'Guardar Orden'}
-              </button>
-            </div>
+            <Seccion titulo="Materiales" icono="🧪">
+              <div style={ui.campos}>
+                <Campo etiqueta="Aleación">{texto('aleacion')}</Campo>
+                <Campo etiqueta="Material estético">{texto('material_estetico')}</Campo>
+                <Campo etiqueta="Tipo de póntico">{texto('tipo_pontico')}</Campo>
+                <Campo etiqueta="Color">{texto('color', 'Ej: A2')}</Campo>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Ortodoncia" icono="😁">
+              <div style={ui.campos1}>
+                <div style={ui.enLinea}>
+                  <Chip activo={!!formData.ortodoncia_superior} onCambiar={(v) => handleChange('ortodoncia_superior', v)} texto="Superior" />
+                  <Chip activo={!!formData.ortodoncia_inferior} onCambiar={(v) => handleChange('ortodoncia_inferior', v)} texto="Inferior" />
+                </div>
+                <Campo etiqueta="Aparato a realizar">{texto('aparato_realizar')}</Campo>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Finalización" icono="📅">
+              <div style={ui.campos}>
+                <Campo etiqueta="Tipo de yeso">{texto('tipo_yeso')}</Campo>
+                <Campo etiqueta="Fecha de entrega">
+                  <input type="date" style={ui.input} value={formData.fecha_entrega}
+                    onChange={(e) => handleChange('fecha_entrega', e.target.value)} />
+                </Campo>
+                {!esLaboratorista && (
+                  <Campo etiqueta="Costo final">
+                    <input type="number" style={ui.input} min="0" step="1" inputMode="numeric" value={formData.costo_final || ''}
+                      onChange={(e) => handleChange('costo_final', e.target.value ? Number(e.target.value) : null)} />
+                  </Campo>
+                )}
+                <Campo etiqueta="Firma">{texto('firma')}</Campo>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="Notas" icono="📝" ancho={!esCompacto}>
+              <textarea style={{ ...ui.input, minHeight: '90px', resize: 'vertical' }} value={formData.notas}
+                onChange={(e) => handleChange('notas', e.target.value)} placeholder="Indicaciones adicionales para el trabajo" />
+            </Seccion>
+          </div>
+
+          {/* Acciones siempre visibles */}
+          <div style={ui.acciones}>
+            <button type="button" style={ui.botonSecundario} onClick={() => navigate('/ordenes')}>Cancelar</button>
+            <button type="submit" style={{ ...ui.botonPrimario, ...(cargando ? { opacity: 0.6 } : {}) }} disabled={cargando}>
+              {cargando ? 'Guardando...' : '💾 Guardar orden'}
+            </button>
           </div>
         </form>
       </div>
     </>
   );
+};
+
+const ui: Record<string, React.CSSProperties> = {
+  pagina: { maxWidth: '1200px', margin: '0 auto', padding: 'clamp(0.75rem, 2.5vw, 1.5rem) clamp(0.75rem, 2.5vw, 1.5rem) 0', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: '#0f172a' },
+  tarjeta: { backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: 'clamp(0.875rem, 2.5vw, 1.25rem)', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', minWidth: 0 },
+  encabezado: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' },
+  encabezadoEtiqueta: { fontSize: '0.75rem', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.04em' },
+  encabezadoTitulo: { fontSize: 'clamp(1.25rem, 3vw, 1.6rem)', fontWeight: 700, margin: '0.125rem 0', overflowWrap: 'anywhere' },
+  encabezadoDatos: { fontSize: '0.875rem', color: '#64748b' },
+  qr: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem', padding: '0.5rem', border: '1px solid #e2e8f0', borderRadius: '10px', backgroundColor: 'white' },
+  grilla: { display: 'grid', gap: '1rem' },
+  seccionTitulo: { fontSize: '1rem', fontWeight: 700, margin: '0 0 0.875rem', display: 'flex', gap: '0.4rem', alignItems: 'center' },
+  campos: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.75rem' },
+  campos1: { display: 'flex', flexDirection: 'column', gap: '0.875rem' },
+  campo: { display: 'flex', flexDirection: 'column', gap: '0.3rem', minWidth: 0 },
+  campoLabel: { fontSize: '0.75rem', fontWeight: 600, color: '#475569' },
+  input: { width: '100%', boxSizing: 'border-box', padding: '0.55rem 0.7rem', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.9rem', backgroundColor: 'white', color: '#0f172a', fontFamily: 'inherit' },
+  ayuda: { fontSize: '0.8rem', color: '#64748b', margin: '0.375rem 0 0.75rem' },
+  opciones: { display: 'flex', flexWrap: 'wrap', gap: '0.375rem' },
+  opcion: { padding: '0.45rem 0.875rem', borderRadius: '999px', border: '1px solid #cbd5e1', backgroundColor: 'white', color: '#334155', fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer' },
+  opcionActiva: { backgroundColor: '#2563eb', borderColor: '#2563eb', color: 'white' },
+  chip: { padding: '0.45rem 0.875rem', borderRadius: '999px', border: '1px dashed #94a3b8', backgroundColor: 'white', color: '#334155', fontSize: '0.85rem', fontWeight: 500, cursor: 'pointer' },
+  chipActivo: { border: '1px solid #10b981', backgroundColor: '#ecfdf5', color: '#065f46' },
+  enLinea: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' },
+  acciones: { position: 'sticky', bottom: 0, display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', padding: '0.875rem 0', marginTop: '1rem', background: 'linear-gradient(to top, #f8fafc 70%, rgba(248,250,252,0))', zIndex: 5 },
+  botonSecundario: { padding: '0.7rem 1.25rem', borderRadius: '10px', border: '1px solid #cbd5e1', backgroundColor: 'white', color: '#334155', fontWeight: 600, cursor: 'pointer', fontSize: '0.9rem' },
+  botonPrimario: { padding: '0.7rem 1.5rem', borderRadius: '10px', border: 'none', backgroundColor: '#2563eb', color: 'white', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem' }
 };
 
 export default OrdenFormulario;

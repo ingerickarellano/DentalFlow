@@ -10,6 +10,7 @@ const OrdenesLista: React.FC = () => {
   const [ordenes, setOrdenes] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
   const [usuario, setUsuario] = useState<any>(null);
+  const [busqueda, setBusqueda] = useState('');
   // Laboratorista: lee la vista sin montos (sin costo final ni anticipos)
   const [esLaboratorista, setEsLaboratorista] = useState(false);
 
@@ -354,6 +355,27 @@ const OrdenesLista: React.FC = () => {
     `;
   };
 
+  // Búsqueda por paciente, clínica o dentista
+  const normalizar = (t: string) => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const filtradas = ordenes.filter(o => {
+    const q = normalizar(busqueda.trim());
+    if (!q) return true;
+    return [o.trabajo?.paciente, o.trabajo?.clinica?.nombre, o.trabajo?.dentista?.nombre, o.doctor_nombre]
+      .some(v => normalizar(v || '').includes(q));
+  });
+
+  const ESTADOS: Record<string, { texto: string; bg: string; color: string }> = {
+    pendiente: { texto: 'Pendiente', bg: '#fef3c7', color: '#92400e' },
+    produccion: { texto: 'En producción', bg: '#dbeafe', color: '#1e40af' },
+    terminado: { texto: 'Terminado', bg: '#d1fae5', color: '#065f46' },
+    entregado: { texto: 'Entregado', bg: '#ede9fe', color: '#5b21b6' }
+  };
+
+  // Dientes marcados en la orden (para el resumen de la tarjeta)
+  const dientesMarcados = (piezas: any) => Object.entries(piezas || {})
+    .filter(([, p]: [string, any]) => Object.values(p?.superficies || {}).some(v => v))
+    .map(([n]) => n);
+
   return (
     <>
       <Header
@@ -364,87 +386,82 @@ const OrdenesLista: React.FC = () => {
         title="Órdenes de Trabajo"
         showTitle={true}
       />
-      <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h1 style={{ fontSize: '1.8rem', color: '#1e293b' }}>📋 Órdenes de Trabajo</h1>
-          <button
-            onClick={() => navigate('/ordenes/nueva')}
-            style={{
-              backgroundColor: '#2563eb',
-              color: 'white',
-              padding: '10px 20px',
-              border: 'none',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
-          >
-            + Nueva Orden
-          </button>
+      <div style={ui.pagina}>
+        <div style={ui.cabecera}>
+          <div>
+            <h1 style={ui.titulo}>📋 Órdenes de Trabajo</h1>
+            <p style={ui.subtitulo}>{ordenes.length} {ordenes.length === 1 ? 'orden' : 'órdenes'}</p>
+          </div>
+          <button onClick={() => navigate('/ordenes/nueva')} style={ui.botonNueva}>+ Nueva orden</button>
+        </div>
+
+        <div style={ui.buscadorCaja}>
+          <span style={ui.buscadorIcono}>🔍</span>
+          <input style={ui.buscador} placeholder="Buscar por paciente, clínica o dentista..." value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)} />
         </div>
 
         {cargando ? (
           <p style={{ textAlign: 'center', color: '#64748b' }}>Cargando...</p>
         ) : ordenes.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', background: 'white', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
-            <p style={{ color: '#64748b' }}>No hay órdenes de trabajo registradas.</p>
-          </div>
+          <div style={ui.vacio}>No hay órdenes de trabajo registradas.</div>
+        ) : filtradas.length === 0 ? (
+          <div style={ui.vacio}>No hay órdenes que coincidan con "{busqueda}".</div>
         ) : (
-          // En pantallas angostas la tabla se desplaza dentro de su caja, sin cortar la página
-          <div style={{ width: '100%', overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <thead style={{ background: '#f1f5f9' }}>
-              <tr>
-                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Paciente</th>
-                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Clínica</th>
-                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Fecha</th>
-                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ordenes.map(orden => (
-                <tr key={orden.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '12px' }}>{orden.trabajo?.paciente || 'N/A'}</td>
-                  <td style={{ padding: '12px' }}>{orden.trabajo?.clinica?.nombre || 'N/A'}</td>
-                  <td style={{ padding: '12px' }}>{new Date(orden.created_at).toLocaleDateString()}</td>
-                  <td style={{ padding: '12px' }}>
-                    <button
-                      onClick={() => navigate(`/ordenes/${orden.id}`)}
-                      style={{
-                        background: '#3b82f6',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        padding: '6px 12px',
-                        marginRight: '8px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => imprimirOrden(orden.id)}
-                      style={{
-                        background: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        padding: '6px 12px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Imprimir
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={ui.grilla}>
+            {filtradas.map(orden => {
+              const estado = ESTADOS[orden.trabajo?.estado] || null;
+              const dientes = dientesMarcados(orden.piezas);
+              return (
+                <div key={orden.id} style={ui.tarjeta}>
+                  <div style={ui.tarjetaCabecera}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={ui.paciente}>👤 {orden.trabajo?.paciente || 'Sin paciente'}</div>
+                      <div style={ui.detalle}>🏥 {orden.trabajo?.clinica?.nombre || 'Sin clínica'}</div>
+                    </div>
+                    {estado && <span style={{ ...ui.estado, backgroundColor: estado.bg, color: estado.color }}>{estado.texto}</span>}
+                  </div>
+                  <div style={ui.datos}>
+                    <div><span style={ui.dLabel}>Dentista</span>{orden.trabajo?.dentista?.nombre || orden.doctor_nombre || '-'}</div>
+                    <div><span style={ui.dLabel}>Creada</span>{new Date(orden.created_at).toLocaleDateString('es-CL')}</div>
+                    <div><span style={ui.dLabel}>Entrega estimada</span>{orden.trabajo?.fecha_entrega_estimada ? new Date(`${orden.trabajo.fecha_entrega_estimada}T12:00:00`).toLocaleDateString('es-CL') : '-'}</div>
+                    <div><span style={ui.dLabel}>Piezas</span>{dientes.length ? dientes.join(', ') : '-'}</div>
+                  </div>
+                  <div style={ui.acciones}>
+                    <button onClick={() => navigate(`/ordenes/${orden.id}`)} style={ui.botonEditar}>✏️ Editar</button>
+                    <button onClick={() => imprimirOrden(orden.id)} style={ui.botonImprimir}>🖨️ Imprimir</button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
     </>
   );
+};
+
+const ui: Record<string, React.CSSProperties> = {
+  pagina: { padding: 'clamp(0.75rem, 2.5vw, 1.5rem)', maxWidth: '1200px', margin: '0 auto', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: '#0f172a' },
+  cabecera: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' },
+  titulo: { fontSize: 'clamp(1.3rem, 3vw, 1.7rem)', fontWeight: 700, margin: 0 },
+  subtitulo: { color: '#64748b', margin: '0.125rem 0 0', fontSize: '0.875rem' },
+  botonNueva: { backgroundColor: '#2563eb', color: 'white', padding: '0.65rem 1.25rem', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem' },
+  buscadorCaja: { position: 'relative', marginBottom: '1rem' },
+  buscadorIcono: { position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.9rem' },
+  buscador: { width: '100%', boxSizing: 'border-box', padding: '0.7rem 0.875rem 0.7rem 2.4rem', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.95rem', backgroundColor: 'white' },
+  vacio: { textAlign: 'center', padding: '2.5rem 1rem', background: 'white', borderRadius: '12px', border: '1px dashed #cbd5e1', color: '#64748b' },
+  grilla: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '0.875rem' },
+  tarjeta: { backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '1rem', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: 0 },
+  tarjetaCabecera: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' },
+  paciente: { fontWeight: 700, fontSize: '1rem', overflowWrap: 'anywhere' },
+  detalle: { fontSize: '0.8125rem', color: '#64748b', marginTop: '0.125rem', overflowWrap: 'anywhere' },
+  estado: { padding: '0.2rem 0.6rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap' },
+  datos: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.5rem 0.75rem', fontSize: '0.875rem', overflowWrap: 'anywhere' },
+  dLabel: { display: 'block', fontSize: '0.7rem', color: '#64748b', fontWeight: 600 },
+  acciones: { display: 'flex', gap: '0.5rem', marginTop: 'auto' },
+  botonEditar: { flex: 1, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '0.55rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' },
+  botonImprimir: { flex: 1, background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '0.55rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }
 };
 
 export default OrdenesLista;
