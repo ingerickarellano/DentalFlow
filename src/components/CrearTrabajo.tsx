@@ -66,6 +66,60 @@ interface TrabajoAgregado {
 
 type IdiomaType = 'es' | 'en';
 
+// ============================================
+// BORRADOR AUTOMÁTICO (en el navegador)
+// Lo que se va armando se guarda solo en este navegador, por usuario, para no
+// perderlo al salir del módulo, recargar o cerrar la pestaña. Al volver se
+// ofrece "Continuar" o "Descartar". Se borra al guardar el trabajo o al limpiarlo.
+// Vence a los 7 días.
+// ============================================
+interface Borrador {
+  version: 1;
+  guardado: number;
+  clinica: string;
+  dentista: string;
+  laboratorista: string;
+  fechaTrabajo: string;
+  paciente: string;
+  rut: string;
+  trabajos: TrabajoAgregado[];
+}
+const DIAS_BORRADOR = 7;
+const claveBorrador = (usuarioId: string) => `dentalflow:borrador-crear-trabajo:${usuarioId}`;
+
+const leerBorrador = (usuarioId: string): Borrador | null => {
+  try {
+    const crudo = window.localStorage.getItem(claveBorrador(usuarioId));
+    if (!crudo) return null;
+    const b = JSON.parse(crudo) as Borrador;
+    if (b?.version !== 1 || !Array.isArray(b.trabajos)) return null;
+    if (Date.now() - b.guardado > DIAS_BORRADOR * 24 * 60 * 60 * 1000) {
+      window.localStorage.removeItem(claveBorrador(usuarioId));
+      return null;
+    }
+    return b;
+  } catch {
+    return null;
+  }
+};
+const escribirBorrador = (usuarioId: string, b: Borrador | null) => {
+  try {
+    if (b) window.localStorage.setItem(claveBorrador(usuarioId), JSON.stringify(b));
+    else window.localStorage.removeItem(claveBorrador(usuarioId));
+  } catch {
+    // Navegador sin almacenamiento disponible (modo privado, etc.): se sigue sin borrador
+  }
+};
+const haceCuanto = (ms: number) => {
+  const min = Math.round((Date.now() - ms) / 60000);
+  if (min < 1) return 'hace un momento';
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  return `hace ${d} día${d === 1 ? '' : 's'}`;
+};
+
 interface ConfiguracionDetallada {
   tooth: string;
   materialConfig: string;
@@ -123,7 +177,7 @@ interface HistorialServicio {
 }
 
 const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
-  const { confirmarTexto, avisar } = useDialogos();
+  const { confirmar, confirmarTexto, avisar } = useDialogos();
   const esCompacto = useMediaQuery(BREAKPOINTS.tablet);  // tablet y celular: una columna
   const esMovil = useMediaQuery(BREAKPOINTS.movil);
   // Estados
@@ -156,6 +210,9 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   const [historialServicios, setHistorialServicios] = useState<HistorialServicio[]>([]);
   const [cargandoHistorial, setCargandoHistorial] = useState<boolean>(false);
   const [user, setUser] = useState<any>(null);
+  // Borrador: se revisa una vez al entrar; mientras haya uno sin decidir, no se sobrescribe
+  const [borradorRevisado, setBorradorRevisado] = useState(false);
+  const [borradorPendiente, setBorradorPendiente] = useState<Borrador | null>(null);
   const [agregando, setAgregando] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
@@ -176,6 +233,73 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
   });
 
   const terminoBusquedaDebounced = useDebounce(terminoBusqueda, 300);
+
+  // ---- Borrador automático ----
+  // Al entrar (con los datos ya cargados): ¿hay una lista sin terminar?
+  useEffect(() => {
+    if (!user?.id || cargandoDatos || borradorRevisado) return;
+    const b = leerBorrador(user.id);
+    if (b && (b.trabajos.length > 0 || b.paciente.trim() || b.clinica)) setBorradorPendiente(b);
+    setBorradorRevisado(true);
+  }, [user?.id, cargandoDatos, borradorRevisado]);
+
+  // Guardado automático mientras se arma la lista
+  useEffect(() => {
+    if (!user?.id || !borradorRevisado || borradorPendiente) return;
+    const vacio = trabajosAgregados.length === 0 && !nombrePaciente.trim() && !rutPaciente.trim() && !clinicaSeleccionada;
+    const t = setTimeout(() => {
+      escribirBorrador(user.id, vacio ? null : {
+        version: 1,
+        guardado: Date.now(),
+        clinica: clinicaSeleccionada,
+        dentista: dentistaSeleccionado,
+        laboratorista: laboratoristaSeleccionado,
+        fechaTrabajo,
+        paciente: nombrePaciente,
+        rut: rutPaciente,
+        trabajos: trabajosAgregados
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [user?.id, borradorRevisado, borradorPendiente, clinicaSeleccionada, dentistaSeleccionado,
+      laboratoristaSeleccionado, fechaTrabajo, nombrePaciente, rutPaciente, trabajosAgregados]);
+
+  const continuarBorrador = () => {
+    const b = borradorPendiente;
+    if (!b) return;
+    // La clínica y el dentista solo si siguen existiendo
+    const clinicaOk = clinicas.some(c => c.id === b.clinica) ? b.clinica : '';
+    setClinicaSeleccionada(clinicaOk);
+    setDentistaSeleccionado(clinicaOk && dentistas.some(d => d.id === b.dentista) ? b.dentista : '');
+    if (!esLaboratorista) setLaboratoristaSeleccionado(laboratoristas.some(l => l.id === b.laboratorista) ? b.laboratorista : '');
+    if (b.fechaTrabajo) setFechaTrabajo(b.fechaTrabajo);
+    setNombrePaciente(b.paciente || '');
+    setRutPaciente(b.rut || '');
+    // Precios al día: si en Gestión de Precios cambió el valor, se usa el actual
+    setTrabajosAgregados(b.trabajos.map(t => {
+      const actual = servicios.find(sv => sv.id === t.servicio.id);
+      return {
+        ...t,
+        servicio: actual || t.servicio,
+        precioUnitario: esLaboratorista ? 0 : (actual ? actual.precio_base : t.precioUnitario),
+        fechaTrabajo: t.fechaTrabajo ? new Date(t.fechaTrabajo) : undefined
+      };
+    }));
+    setBorradorPendiente(null);
+    avisar(idioma === 'es' ? 'Lista recuperada. Puedes seguir donde la dejaste.' : 'Draft restored.', 'exito');
+  };
+
+  const descartarBorrador = async () => {
+    const ok = await confirmar({
+      titulo: idioma === 'es' ? '¿Descartar la lista sin terminar?' : 'Discard the unfinished list?',
+      mensaje: idioma === 'es' ? 'Se borrará el borrador guardado. Esta acción no se puede deshacer.' : 'This cannot be undone.',
+      textoConfirmar: idioma === 'es' ? 'Descartar' : 'Discard',
+      peligro: true
+    });
+    if (!ok) return;
+    if (user?.id) escribirBorrador(user.id, null);
+    setBorradorPendiente(null);
+  };
 
   // Efectos
   useEffect(() => {
@@ -502,6 +626,7 @@ const CrearTrabajo: React.FC<CrearTrabajoProps> = ({ onBack }) => {
         if (error) throw error;
       }
       avisar(idioma === 'es' ? 'Trabajo guardado exitosamente' : 'Work saved successfully');
+      if (user?.id) escribirBorrador(user.id, null);
       reiniciarFormulario();
     } catch (error: any) {
       console.error('Error finalizar:', error);
@@ -1672,20 +1797,24 @@ Color del diente: ${configDetallada.toothColor}
 
   const puedeFinalizar = clinicaSeleccionada && trabajosAgregados.length > 0 && fechaTrabajo;
 
+  // Alto de los cuadros en computador: el espacio visible de la pantalla
+  // (encabezado + título restados), con un mínimo para pantallas muy bajas.
+  const ALTO_CUADROS = 'max(540px, calc(100vh - 170px))';
+
   // Estilos del diseño en dos cuadros
   const ui: { [key: string]: React.CSSProperties } = {
-    main: { padding: 'clamp(0.75rem, 2.5vw, 1.5rem)', maxWidth: '1600px', margin: '0 auto' },
-    dosColumnas: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)', gap: '1.25rem', alignItems: 'start' },
+    main: { padding: '0.75rem clamp(0.75rem, 2vw, 1.25rem) 0.75rem', maxWidth: '1600px', margin: '0 auto' },
+    dosColumnas: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.35fr)', gap: '1rem', alignItems: 'start' },
     columnaUnica: { display: 'flex', flexDirection: 'column', gap: '1rem' },
-    barra: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', minHeight: '44px', marginBottom: '0.75rem' },
-    titulo: { fontSize: 'clamp(1.25rem, 3vw, 1.6rem)', fontWeight: 700, color: '#0f172a', margin: 0 },
+    barra: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', minHeight: '40px', marginBottom: '0.5rem' },
+    titulo: { fontSize: 'clamp(1.2rem, 2.4vw, 1.45rem)', fontWeight: 700, color: '#0f172a', margin: 0 },
     modoGrupo: { display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' },
     modoEtiqueta: { fontSize: '0.8125rem', fontWeight: 600, color: '#475569', backgroundColor: '#e2e8f0', padding: '0.35rem 0.75rem', borderRadius: '999px' },
     botonModo: { padding: '0.55rem 1rem', borderRadius: '0.5rem', border: '1px solid #7c3aed', backgroundColor: '#7c3aed', color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' },
     botonLimpiar: { padding: '0.55rem 1rem', borderRadius: '0.5rem', border: '1px solid #fecaca', backgroundColor: 'white', color: '#dc2626', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' },
     cuadro: { backgroundColor: 'white', border: '1px solid #e2e8f0', borderRadius: '0.875rem', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxSizing: 'border-box' },
     scrollPropio: { flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' },
-    filtros: { padding: '0.875rem', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '0.625rem' },
+    filtros: { padding: '0.75rem', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '0.5rem' },
     filtrosFila: { display: 'flex', gap: '0.625rem', flexWrap: 'wrap', alignItems: 'center' },
     buscadorCaja: { position: 'relative', flex: '1 1 220px', minWidth: 0 },
     buscadorIcono: { position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.875rem' },
@@ -1699,8 +1828,8 @@ Color del diente: ${configDetallada.toothColor}
     chipDeshabilitado: { opacity: 0.5, cursor: 'not-allowed' },
     resultados: { fontSize: '0.8125rem', color: '#475569' },
     vacio: { padding: '2rem 1rem', textAlign: 'center', color: '#64748b', fontSize: '0.9375rem' },
-    tarjetas: { display: 'grid', gap: '0.75rem', padding: '0.875rem' },
-    tarjeta: { border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: 'white', minWidth: 0 },
+    tarjetas: { display: 'grid', gap: '0.625rem', padding: '0.75rem' },
+    tarjeta: { border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '0.625rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', backgroundColor: 'white', minWidth: 0 },
     tarjetaNombre: { fontWeight: 600, color: '#0f172a', fontSize: '0.875rem', lineHeight: 1.3, minHeight: '2.6em', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' },
     tarjetaEtiquetas: { display: 'flex', gap: '0.25rem', flexWrap: 'wrap' },
     etiquetaCategoria: { fontSize: '0.6875rem', padding: '0.125rem 0.5rem', borderRadius: '999px', backgroundColor: '#eff6ff', color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' },
@@ -1712,7 +1841,7 @@ Color del diente: ${configDetallada.toothColor}
     inputPieza: { flex: 1, minWidth: 0, boxSizing: 'border-box', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.875rem' },
     inputNota: { width: '100%', boxSizing: 'border-box', padding: '0.45rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.8125rem' },
     botonAgregar: { width: '100%', padding: '0.5rem', border: 'none', borderRadius: '0.375rem', backgroundColor: '#2563eb', color: 'white', fontWeight: 600, fontSize: '0.8125rem', cursor: 'pointer', marginTop: 'auto' },
-    info: { padding: '1rem', borderBottom: '1px solid #e2e8f0' },
+    info: { padding: '0.875rem 1rem', borderBottom: '1px solid #e2e8f0' },
     subtitulo: { fontSize: '1rem', fontWeight: 700, color: '#0f172a', margin: '0 0 0.75rem' },
     infoGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.625rem 0.75rem' },
     campo: { display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 },
@@ -1723,7 +1852,7 @@ Color del diente: ${configDetallada.toothColor}
     aviso: { marginTop: '0.75rem', padding: '0.5rem 0.75rem', backgroundColor: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '0.5rem', fontSize: '0.8125rem', color: '#92400e' },
     agregadosCabecera: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '0.5rem', padding: '0.875rem 1rem 0', flexWrap: 'wrap' },
     agregadosMes: { fontSize: '0.8125rem', color: '#64748b' },
-    agregados: { padding: '0 1rem 0.75rem', minHeight: '120px' },
+    agregados: { padding: '0 1rem 0.75rem', minHeight: esCompacto ? '120px' : 0 },
     grupo: { border: '1px solid #e2e8f0', borderLeft: '4px solid #2563eb', borderRadius: '0.625rem', padding: '0.625rem 0.75rem', marginBottom: '0.625rem', backgroundColor: '#f8fafc' },
     grupoCabecera: { display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'flex-start', marginBottom: '0.375rem' },
     grupoPaciente: { fontWeight: 700, color: '#0f172a', fontSize: '0.9375rem', overflowWrap: 'anywhere' },
@@ -1737,6 +1866,9 @@ Color del diente: ${configDetallada.toothColor}
     botonQuitar: { flex: '0 0 auto', width: '28px', height: '28px', borderRadius: '50%', border: '1px solid #fecaca', backgroundColor: 'white', color: '#dc2626', cursor: 'pointer', fontSize: '0.75rem' },
     pie: { borderTop: '1px solid #e2e8f0', padding: '0.75rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', backgroundColor: 'white' },
     pieTotal: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1rem', color: '#0f172a' },
+    borrador: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', padding: '0.75rem 1rem', marginBottom: '0.75rem', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '0.75rem', color: '#1e3a8a' },
+    borradorContinuar: { padding: '0.5rem 1rem', borderRadius: '0.5rem', border: 'none', backgroundColor: '#2563eb', color: 'white', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' },
+    borradorDescartar: { padding: '0.5rem 1rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', backgroundColor: 'white', color: '#334155', fontWeight: 600, cursor: 'pointer', fontSize: '0.875rem' },
     contador: { position: 'absolute', right: '14px', bottom: '12px', width: '44px', height: '44px', borderRadius: '50%', border: 'none', backgroundColor: '#2563eb', color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37,99,235,0.35)', zIndex: 1 },
     botonFinalizar: { width: '100%', padding: '0.8rem', border: 'none', borderRadius: '0.625rem', backgroundColor: '#10b981', color: 'white', fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }
   };
@@ -1762,8 +1894,7 @@ Color del diente: ${configDetallada.toothColor}
   const enModoDetallado = modoDetallado && !esLaboratorista;
 
   const barraCatalogo = (
-    <div style={ui.barra}>
-      {!esCompacto && <h1 style={ui.titulo}>{t.title}</h1>}
+    <div style={{ ...ui.barra, justifyContent: 'flex-end' }}>
       {!esLaboratorista && (
         <div style={ui.modoGrupo}>
           <span style={ui.modoEtiqueta}>{enModoDetallado ? '⚙️ Modo detallado' : '📋 Modo simple'}</span>
@@ -1776,7 +1907,7 @@ Color del diente: ${configDetallada.toothColor}
   );
 
   const cuadroCatalogo = (
-    <section style={{ ...ui.cuadro, height: esCompacto ? '75vh' : '820px' }} aria-label="Catálogo de servicios">
+    <section style={{ ...ui.cuadro, height: esCompacto ? '75vh' : ALTO_CUADROS }} aria-label="Catálogo de servicios">
       {enModoDetallado ? (
         <div style={ui.scrollPropio}>{renderModoDetallado()}</div>
       ) : (
@@ -1887,14 +2018,35 @@ Color del diente: ${configDetallada.toothColor}
     </section>
   );
 
+  const avisoBorrador = borradorPendiente ? (
+    <div style={ui.borrador} role="status">
+      <div style={{ minWidth: 0 }}>
+        <strong>📝 Tienes una lista sin terminar</strong>
+        <div style={{ fontSize: '0.8125rem', color: '#475569', overflowWrap: 'anywhere' }}>
+          {[
+            borradorPendiente.paciente.trim() ? `Paciente: ${borradorPendiente.paciente.trim()}` : '',
+            clinicas.find(c => c.id === borradorPendiente.clinica)?.nombre || '',
+            `${borradorPendiente.trabajos.length} ${borradorPendiente.trabajos.length === 1 ? 'prestación' : 'prestaciones'}`,
+            `guardada ${haceCuanto(borradorPendiente.guardado)}`
+          ].filter(Boolean).join(' · ')}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button style={ui.borradorDescartar} onClick={descartarBorrador}>Descartar</button>
+        <button style={ui.borradorContinuar} onClick={continuarBorrador}>Continuar</button>
+      </div>
+    </div>
+  ) : null;
+
   const barraTrabajo = (
-    <div style={{ ...ui.barra, justifyContent: 'flex-end' }}>
+    <div style={{ ...ui.barra, justifyContent: esCompacto ? 'flex-end' : 'space-between' }}>
+      {!esCompacto && <h1 style={ui.titulo}>{t.title}</h1>}
       <button style={ui.botonLimpiar} onClick={limpiarTodo}>{t.limpiarTrabajo}</button>
     </div>
   );
 
   const cuadroTrabajo = (
-    <section style={{ ...ui.cuadro, height: esCompacto ? 'auto' : '820px' }} aria-label="Trabajo en preparación">
+    <section style={{ ...ui.cuadro, height: esCompacto ? 'auto' : ALTO_CUADROS }} aria-label="Trabajo en preparación">
       {/* Información del trabajo */}
       <div style={ui.info}>
         <h2 style={ui.subtitulo}>📋 {idioma === 'es' ? 'Información del trabajo' : 'Work information'}</h2>
@@ -1949,7 +2101,7 @@ Color del diente: ${configDetallada.toothColor}
         <h2 style={ui.subtitulo}>🧾 {t.trabajosAgregados} ({trabajosAgregados.length})</h2>
         {fechaTrabajo && <span style={ui.agregadosMes}>{(() => { const f = formatearFecha(fechaTrabajo); return f.charAt(0).toUpperCase() + f.slice(1); })()}</span>}
       </div>
-      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', ...(esCompacto ? {} : { flex: 1, minHeight: 0 }) }}>
+      <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', ...(esCompacto ? {} : { flex: 1, minHeight: '90px', overflow: 'hidden' }) }}>
       <div id="trabajos-agregados-container"
         style={{ ...ui.scrollPropio, ...(esCompacto ? { maxHeight: '50vh', flex: 'none' } : {}), ...ui.agregados,
                  ...(trabajosAgregados.length > 0 ? { paddingBottom: '64px' } : {}) }}>
@@ -2033,15 +2185,19 @@ Color del diente: ${configDetallada.toothColor}
           </div>
         ) : esCompacto ? (
           <div style={ui.columnaUnica}>
+            {avisoBorrador}
             <h1 style={ui.titulo}>{t.title}</h1>
             <div>{barraTrabajo}{cuadroTrabajo}</div>
             <div>{barraCatalogo}{cuadroCatalogo}</div>
           </div>
         ) : (
+          <>
+          {avisoBorrador}
           <div style={ui.dosColumnas}>
-            <div style={{ minWidth: 0 }}>{barraCatalogo}{cuadroCatalogo}</div>
             <div style={{ minWidth: 0 }}>{barraTrabajo}{cuadroTrabajo}</div>
+            <div style={{ minWidth: 0 }}>{barraCatalogo}{cuadroCatalogo}</div>
           </div>
+          </>
         )}
       </main>
 
