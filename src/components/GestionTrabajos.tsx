@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { useDialogos } from './ui/Dialogos';
+import NuevoTrabajoModal from './trabajos/NuevoTrabajoModal';
 
 interface GestionTrabajosProps {
   onBack?: () => void;
@@ -177,6 +178,17 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
 
   // Selección para "Finalizar seleccionados" (clave = ids del trabajo agrupado)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
+
+  // Agregar un trabajo desde la clínica (ventana) y menú "⋯ Más" de cada trabajo
+  const [clinicaNuevoTrabajo, setClinicaNuevoTrabajo] = useState<{ id: string; nombre: string } | null>(null);
+  const [miUsuarioId, setMiUsuarioId] = useState('');
+  const [menuAbierto, setMenuAbierto] = useState<string | null>(null);
+  useEffect(() => {
+    if (!menuAbierto) return;
+    const cerrar = () => setMenuAbierto(null);
+    document.addEventListener('click', cerrar);
+    return () => document.removeEventListener('click', cerrar);
+  }, [menuAbierto]);
   const claveTrabajo = (t: { ids: string[] }) => t.ids.join('-');
   const sePuedeFinalizar = (t: { estado: string }) => t.estado === 'pendiente' || t.estado === 'produccion';
   const alternarSeleccion = (clave: string) => setSeleccionados(prev => {
@@ -241,6 +253,7 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
         avisar('No hay usuario autenticado');
         return;
       }
+      setMiUsuarioId(user.id);
 
       const { data: perfilRol } = await supabase
         .from('perfiles_usuarios')
@@ -1168,6 +1181,8 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
+      gap: '0.75rem',
+      flexWrap: 'wrap',
       marginBottom: '1rem',
       paddingBottom: '0.5rem',
       borderBottom: '2px solid #3b82f6'
@@ -1248,8 +1263,55 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
     } as React.CSSProperties,
     actionButtons: {
       display: 'flex',
-      gap: '0.25rem',
+      gap: '0.375rem',
       flexShrink: 0,
+      flexWrap: 'wrap',
+    } as React.CSSProperties,
+    botonAccion: {
+      padding: '0.35rem 0.6rem',
+      borderRadius: '0.5rem',
+      border: '1px solid #cbd5e1',
+      backgroundColor: 'white',
+      color: '#334155',
+      fontSize: '0.75rem',
+      fontWeight: 600,
+      cursor: 'pointer',
+      whiteSpace: 'nowrap',
+    } as React.CSSProperties,
+    menu: {
+      position: 'absolute',
+      right: 0,
+      top: 'calc(100% + 4px)',
+      minWidth: '170px',
+      backgroundColor: 'white',
+      border: '1px solid #e2e8f0',
+      borderRadius: '0.625rem',
+      boxShadow: '0 10px 25px rgba(15,23,42,0.15)',
+      padding: '0.25rem',
+      zIndex: 50,
+    } as React.CSSProperties,
+    menuItem: {
+      display: 'block',
+      width: '100%',
+      textAlign: 'left',
+      padding: '0.5rem 0.75rem',
+      border: 'none',
+      background: 'none',
+      borderRadius: '0.375rem',
+      fontSize: '0.85rem',
+      cursor: 'pointer',
+      color: '#0f172a',
+    } as React.CSSProperties,
+    botonAgregarTrabajo: {
+      padding: '0.45rem 0.875rem',
+      borderRadius: '0.5rem',
+      border: '1px solid #2563eb',
+      backgroundColor: '#eff6ff',
+      color: '#1d4ed8',
+      fontSize: '0.8125rem',
+      fontWeight: 600,
+      cursor: 'pointer',
+      whiteSpace: 'nowrap',
     } as React.CSSProperties,
     actionIcon: {
       background: 'none',
@@ -1495,6 +1557,12 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
               <div key={clinicaId} style={styles.clinicaSection}>
                 <div style={styles.clinicaHeader}>
                   <h2 style={styles.clinicaNombre}>🏥 {clinica?.nombre || 'Clínica sin nombre'}</h2>
+                  {clinica && (
+                    <button style={styles.botonAgregarTrabajo}
+                      onClick={() => setClinicaNuevoTrabajo({ id: clinica.id, nombre: clinica.nombre })}>
+                      ➕ Agregar trabajo
+                    </button>
+                  )}
                 </div>
 
                 {Object.entries(pacientes).map(([pacienteNombre, data]) => (
@@ -1567,11 +1635,22 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
                             </select>
                           </div>
                           <div style={styles.actionButtons}>
-                            <button style={styles.actionIcon} onClick={() => abrirModalEdicion(trabajo)} title="Editar">✏️</button>
-                            <button style={styles.actionIcon} onClick={() => abrirModalQR(trabajo)} title="Generar QR">📦</button>
-                            <button style={styles.actionIcon} onClick={() => abrirModalNotas(trabajo)} title="Notas">📝</button>
-                            <button style={styles.actionIcon} onClick={() => imprimirTrabajo(trabajo)} title="Imprimir">🖨️</button>
-                            <button style={{ ...styles.actionIcon, color: '#ef4444' }} onClick={() => eliminarTrabajo(trabajo)} title="Eliminar">🗑️</button>
+                            <button style={styles.botonAccion} onClick={() => abrirModalEdicion(trabajo)}>✏️ Editar</button>
+                            <button style={styles.botonAccion} onClick={() => imprimirTrabajo(trabajo)}>🖨️ Imprimir</button>
+                            <div style={{ position: 'relative' }}>
+                              <button style={styles.botonAccion} aria-haspopup="menu" aria-expanded={menuAbierto === claveTrabajo(trabajo)}
+                                onClick={(ev) => { ev.stopPropagation(); setMenuAbierto(menuAbierto === claveTrabajo(trabajo) ? null : claveTrabajo(trabajo)); }}>
+                                ⋯ Más
+                              </button>
+                              {menuAbierto === claveTrabajo(trabajo) && (
+                                <div style={styles.menu} role="menu" onClick={(ev) => ev.stopPropagation()}>
+                                  <button style={styles.menuItem} role="menuitem" onClick={() => { setMenuAbierto(null); abrirModalQR(trabajo); }}>📦 QR de entrega</button>
+                                  <button style={styles.menuItem} role="menuitem" onClick={() => { setMenuAbierto(null); abrirModalNotas(trabajo); }}>📝 Notas</button>
+                                  <div style={{ height: 1, background: '#e2e8f0', margin: '0.25rem 0' }} />
+                                  <button style={{ ...styles.menuItem, color: '#dc2626' }} role="menuitem" onClick={() => { setMenuAbierto(null); eliminarTrabajo(trabajo); }}>🗑️ Eliminar</button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -1583,6 +1662,23 @@ const GestionTrabajos: React.FC<GestionTrabajosProps> = ({ onBack, user, onLogou
           })
         )}
       </div>
+
+      {/* AGREGAR TRABAJO A UNA CLÍNICA (ventana) */}
+      <NuevoTrabajoModal
+        abierto={!!clinicaNuevoTrabajo}
+        clinica={clinicaNuevoTrabajo}
+        onCerrar={() => setClinicaNuevoTrabajo(null)}
+        onGuardado={cargarDatos}
+        mes={filtros.mes !== 'todos'
+          ? `${filtros.año !== 'todos' ? filtros.año : new Date().getFullYear()}-${filtros.mes}`
+          : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`}
+        dentistas={dentistas as any}
+        laboratoristas={laboratoristas as any}
+        servicios={servicios as any}
+        esLaboratorista={esLaboratorista}
+        miFichaLaboratorista={(laboratoristas as any[]).find(l => l.usuario_id === miUsuarioId)?.id || ''}
+        avisar={avisar}
+      />
 
       {/* BARRA DE SELECCIÓN: aparece al marcar trabajos */}
       {seleccionados.size > 0 && (
